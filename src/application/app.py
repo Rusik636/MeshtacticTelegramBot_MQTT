@@ -13,6 +13,7 @@ from src.repo.mqtt_repository import AsyncMQTTRepository
 from src.repo.telegram_repository import AsyncTelegramRepository
 from src.service.message_service import MessageService
 from src.service.mqtt_proxy_service import MQTTProxyService
+from src.service.node_cache_service import NodeCacheService
 from src.handlers.mqtt_handler import MQTTMessageHandlerImpl
 from src.handlers.telegram_commands import TelegramCommandsHandler
 
@@ -41,7 +42,8 @@ class MeshtasticTelegramBotApp:
         # Инициализируем компоненты
         self.mqtt_repo = AsyncMQTTRepository(config.mqtt_source)
         self.telegram_repo = AsyncTelegramRepository(config.telegram)
-        self.message_service = MessageService()
+        self.node_cache_service = NodeCacheService()
+        self.message_service = MessageService(node_cache_service=self.node_cache_service)
         self.proxy_service = MQTTProxyService(config.mqtt_proxy_targets)
         
         # Создаем обработчик MQTT сообщений

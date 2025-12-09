@@ -56,10 +56,29 @@ class MQTTMessageHandlerImpl(MQTTMessageHandler):
             payload: Данные сообщения
         """
         try:
+            # Пропускаем protobuf сообщения (топики с /e/), так как они дублируют JSON сообщения
+            # Meshtastic публикует сообщения в двух форматах:
+            # - msh/2/json/2/e/... - protobuf (бинарный формат)
+            # - msh/2/json/2/json/... - JSON (текстовый формат)
+            # Обрабатываем только JSON формат, чтобы избежать ошибок парсинга
+            if "/e/" in topic and "/json/" not in topic:
+                logger.debug(f"Пропущено protobuf сообщение (дубликат JSON): topic={topic}")
+                return
+            
             logger.info(f"Получено MQTT сообщение: topic={topic}, payload_size={len(payload)}")
             
             # Парсим сообщение
             message: MeshtasticMessage = self.message_service.parse_mqtt_message(topic, payload)
+            
+            # Пропускаем сообщения типа nodeinfo и position (они обрабатываются для обновления кэша)
+            if message.message_type in ("nodeinfo", "position"):
+                logger.debug(f"Пропущено сообщение типа {message.message_type} (используется только для обновления кэша)")
+                return
+            
+            # Отправляем только текстовые сообщения в Telegram
+            if message.message_type != "text":
+                logger.debug(f"Пропущено сообщение типа {message.message_type}")
+                return
             
             # Форматируем для Telegram
             telegram_text = message.format_for_telegram()

@@ -53,3 +53,7 @@ mosquitto/data/*
 mosquitto/log/*
 !mosquitto/data/.gitkeep
 !mosquitto/log/.gitkeep
+
+# Bot data
+data/*
+!data/.gitkeep
