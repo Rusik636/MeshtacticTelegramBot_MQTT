@@ -1,0 +1,18 @@
+# Core dependencies
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+
+# Telegram bot (async)
+pyTelegramBotAPI>=4.14.0
+
+# MQTT client (async)
+aiomqtt>=2.0.0
+aiohttp
+
+# Logging
+structlog>=23.2.0
+
+# Type hints
+typing-extensions>=4.8.0
+
