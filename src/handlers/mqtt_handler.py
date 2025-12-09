@@ -3,8 +3,8 @@
 
 Обрабатывает сообщения от Meshtastic и координирует их отправку в Telegram и прокси.
 """
+import logging
 from typing import List
-import structlog
 
 from src.domain.message import MeshtasticMessage
 from src.repo.mqtt_repository import MQTTMessageHandler
@@ -13,7 +13,7 @@ from src.service.message_service import MessageService
 from src.service.mqtt_proxy_service import MQTTProxyService
 
 
-logger = structlog.get_logger()
+logger = logging.getLogger(__name__)
 
 
 class MQTTMessageHandlerImpl(MQTTMessageHandler):
@@ -56,7 +56,7 @@ class MQTTMessageHandlerImpl(MQTTMessageHandler):
             payload: Данные сообщения
         """
         try:
-            logger.info("Получено MQTT сообщение", topic=topic, payload_size=len(payload))
+            logger.info(f"Получено MQTT сообщение: topic={topic}, payload_size={len(payload)}")
             
             # Парсим сообщение
             message: MeshtasticMessage = self.message_service.parse_mqtt_message(topic, payload)
@@ -68,7 +68,7 @@ class MQTTMessageHandlerImpl(MQTTMessageHandler):
             try:
                 await self.telegram_repo.send_to_group(telegram_text)
             except Exception as e:
-                logger.error("Ошибка при отправке в группу", error=str(e))
+                logger.error(f"Ошибка при отправке в группу: {e}", exc_info=True)
             
             # Отправляем пользователям
             if self.notify_user_ids:
@@ -78,23 +78,20 @@ class MQTTMessageHandlerImpl(MQTTMessageHandler):
                             await self.telegram_repo.send_to_user(user_id, telegram_text)
                         except Exception as e:
                             logger.error(
-                                "Ошибка при отправке пользователю",
-                                user_id=user_id,
-                                error=str(e)
+                                f"Ошибка при отправке пользователю: user_id={user_id}, error={e}",
+                                exc_info=True
                             )
             
             # Проксируем в другие MQTT брокеры
             try:
                 await self.proxy_service.proxy_message(message)
             except Exception as e:
-                logger.error("Ошибка при проксировании сообщения", error=str(e))
+                logger.error(f"Ошибка при проксировании сообщения: {e}", exc_info=True)
             
-            logger.info("Успешно обработано MQTT сообщение", topic=topic)
+            logger.info(f"Успешно обработано MQTT сообщение: topic={topic}")
         except Exception as e:
             logger.error(
-                "Критическая ошибка при обработке MQTT сообщения",
-                topic=topic,
-                error=str(e),
+                f"Критическая ошибка при обработке MQTT сообщения: topic={topic}, error={e}",
                 exc_info=True
             )
 

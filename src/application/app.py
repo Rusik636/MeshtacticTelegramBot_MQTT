@@ -4,8 +4,8 @@
 Оркестрирует работу всех компонентов системы.
 """
 import asyncio
+import logging
 import signal
-import structlog
 from typing import Optional
 
 from src.config import AppConfig
@@ -17,7 +17,7 @@ from src.handlers.mqtt_handler import MQTTMessageHandlerImpl
 from src.handlers.telegram_commands import TelegramCommandsHandler
 
 
-logger = structlog.get_logger()
+logger = logging.getLogger(__name__)
 
 
 class MeshtasticTelegramBotApp:
@@ -112,7 +112,7 @@ class MeshtasticTelegramBotApp:
             await self._shutdown_event.wait()
             
         except Exception as e:
-            logger.error("Критическая ошибка при запуске приложения", error=str(e))
+            logger.error(f"Критическая ошибка при запуске приложения: {e}", exc_info=True)
             raise
         finally:
             await self.stop()
@@ -150,7 +150,7 @@ class MeshtasticTelegramBotApp:
             
             logger.info("Приложение остановлено")
         except Exception as e:
-            logger.error("Ошибка при остановке приложения", error=str(e))
+            logger.error(f"Ошибка при остановке приложения: {e}", exc_info=True)
         
         if self._shutdown_event:
             self._shutdown_event.set()
@@ -158,7 +158,7 @@ class MeshtasticTelegramBotApp:
     async def _handle_shutdown(self, sig: signal.Signals | int) -> None:
         """Обрабатывает сигнал остановки."""
         sig_name = sig.name if hasattr(sig, 'name') else str(sig)
-        logger.info("Получен сигнал остановки", signal=sig_name)
+        logger.info(f"Получен сигнал остановки: {sig_name}")
         await self.stop()
     
     async def run_forever(self) -> None:

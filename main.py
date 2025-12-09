@@ -4,26 +4,26 @@
 Инициализирует конфигурацию и запускает приложение.
 """
 import asyncio
-import sys
-import structlog
 import logging
+import sys
 from pathlib import Path
 
 # Добавляем src в путь для импортов
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.config import AppConfig
+from src.config import AppConfig, setup_basic_logging
 from src.application.app import MeshtasticTelegramBotApp
+
+# Логирование настраивается автоматически при загрузке конфигурации
+logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
     """Главная функция приложения."""
-    logger = None
+    # Настраиваем базовое логирование для отображения ошибок конфигурации
+    setup_basic_logging()
+    
     try:
-        # Настраиваем базовое логирование для отображения ошибок конфигурации
-        logging.basicConfig(level=logging.INFO)
-        logger = structlog.get_logger()
-        
         # Проверяем наличие .env файла (опционально, так как переменные могут быть в окружении)
         env_file = Path(".env")
         if not env_file.exists():
@@ -38,7 +38,7 @@ async def main() -> None:
             config = AppConfig()
         except ValueError as e:
             # Ошибки валидации конфигурации
-            logger.error("Ошибка конфигурации", error=str(e))
+            logger.error(f"Ошибка конфигурации: {e}")
             print("\n❌ ОШИБКА КОНФИГУРАЦИИ:")
             print(str(e))
             print("\nПроверьте файл .env и убедитесь, что все обязательные переменные заданы.")
@@ -46,7 +46,7 @@ async def main() -> None:
         except Exception as e:
             error_msg = str(e)
             if "telegram" in error_msg.lower() or "bot_token" in error_msg.lower():
-                logger.error("Ошибка загрузки конфигурации Telegram", error=error_msg)
+                logger.error(f"Ошибка загрузки конфигурации Telegram: {error_msg}")
                 print("\n❌ ОШИБКА: Не задан TELEGRAM_BOT_TOKEN")
                 print("Убедитесь, что в файле .env задана переменная:")
                 print("TELEGRAM_BOT_TOKEN=your_bot_token_here")
@@ -54,26 +54,19 @@ async def main() -> None:
                 sys.exit(1)
             raise
         
-        # Настраиваем логирование через конфигурацию
+        # Настраиваем полное логирование через конфигурацию
         config.setup_logging()
-        logger = structlog.get_logger()
-        logger.info("Инициализация Meshtastic Telegram Bot", version="1.0.0")
+        logger.info("Инициализация Meshtastic Telegram Bot")
         
         # Создаем и запускаем приложение
         app = MeshtasticTelegramBotApp(config)
         await app.run_forever()
         
     except KeyboardInterrupt:
-        if logger:
-            logger.info("Получен сигнал прерывания")
+        logger.info("Получен сигнал прерывания")
         sys.exit(0)
     except Exception as e:
-        if logger:
-            logger.error("Критическая ошибка при запуске приложения", error=str(e), exc_info=True)
-        else:
-            print(f"\n❌ КРИТИЧЕСКАЯ ОШИБКА: {e}")
-            import traceback
-            traceback.print_exc()
+        logger.error(f"Критическая ошибка при запуске приложения: {e}", exc_info=True)
         sys.exit(1)
 
 

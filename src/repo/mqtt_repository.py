@@ -3,17 +3,17 @@
 
 Использует паттерн Repository для абстракции работы с MQTT брокером.
 """
+import json
+import logging
 from abc import ABC, abstractmethod
 from typing import Protocol, Optional, Dict, Any
-import json
-import structlog
 from aiomqtt import Client as MQTTClient
 from aiomqtt.exceptions import MqttError
 
 from src.config import MQTTBrokerConfig
 
 
-logger = structlog.get_logger()
+logger = logging.getLogger(__name__)
 
 
 class MQTTMessageHandler(Protocol):
@@ -95,18 +95,17 @@ class AsyncMQTTRepository(MQTTRepository):
         """Подключается к MQTT брокеру."""
         try:
             logger.info(
-                "Подключение к MQTT брокеру",
-                host=self.config.host,
-                port=self.config.port,
-                client_id=self.config.client_id
+                f"Подключение к MQTT брокеру: host={self.config.host}, "
+                f"port={self.config.port}, client_id={self.config.client_id}"
             )
             
+            # В aiomqtt 2.0+ client_id передается через параметр identifier как строка
             self._client = MQTTClient(
                 hostname=self.config.host,
                 port=self.config.port,
                 username=self.config.username,
                 password=self.config.password,
-                client_id=self.config.client_id,
+                identifier=self.config.client_id,
                 keepalive=self.config.keepalive,
             )
             
@@ -114,7 +113,7 @@ class AsyncMQTTRepository(MQTTRepository):
             
             logger.info("Успешно подключен к MQTT брокеру")
         except MqttError as e:
-            logger.error("Ошибка подключения к MQTT брокеру", error=str(e))
+            logger.error(f"Ошибка подключения к MQTT брокеру: {e}", exc_info=True)
             raise
     
     async def disconnect(self) -> None:
@@ -124,7 +123,7 @@ class AsyncMQTTRepository(MQTTRepository):
                 await self._client.__aexit__(None, None, None)
                 logger.info("Отключен от MQTT брокера")
             except Exception as e:
-                logger.error("Ошибка при отключении от MQTT брокера", error=str(e))
+                logger.error(f"Ошибка при отключении от MQTT брокера: {e}", exc_info=True)
             finally:
                 self._client = None
     
@@ -143,21 +142,23 @@ class AsyncMQTTRepository(MQTTRepository):
         self._subscribed_topic = topic
         
         try:
-            logger.info("Подписка на MQTT топик", topic=topic, qos=self.config.qos)
+            logger.info(f"Подписка на MQTT топик: topic={topic}, qos={self.config.qos}")
             await self._client.subscribe(topic, qos=self.config.qos)
             
             # Запускаем обработку сообщений в бесконечном цикле
             async for message in self._client.messages:
                 try:
-                    await self._handler.handle_message(message.topic.value, message.payload)
+                    # В aiomqtt 2.0+ topic - это строка напрямую
+                    topic_str = str(message.topic)
+                    await self._handler.handle_message(topic_str, message.payload)
                 except Exception as e:
+                    topic_str = str(message.topic)
                     logger.error(
-                        "Ошибка при обработке MQTT сообщения",
-                        topic=message.topic.value,
-                        error=str(e)
+                        f"Ошибка при обработке MQTT сообщения: topic={topic_str}, error={e}",
+                        exc_info=True
                     )
         except MqttError as e:
-            logger.error("Ошибка при подписке на MQTT топик", topic=topic, error=str(e))
+            logger.error(f"Ошибка при подписке на MQTT топик: topic={topic}, error={e}", exc_info=True)
             raise
     
     async def publish(
@@ -189,12 +190,10 @@ class AsyncMQTTRepository(MQTTRepository):
             await self._client.publish(topic, payload_bytes, qos=qos)
             
             logger.debug(
-                "Опубликовано MQTT сообщение",
-                topic=topic,
-                qos=qos,
-                payload_size=len(payload_bytes)
+                f"Опубликовано MQTT сообщение: topic={topic}, qos={qos}, "
+                f"payload_size={len(payload_bytes)}"
             )
         except MqttError as e:
-            logger.error("Ошибка при публикации MQTT сообщения", topic=topic, error=str(e))
+            logger.error(f"Ошибка при публикации MQTT сообщения: topic={topic}, error={e}", exc_info=True)
             raise
 

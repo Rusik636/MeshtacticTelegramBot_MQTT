@@ -4,8 +4,8 @@
 Обрабатывает команды, отправленные пользователями в личном чате с ботом.
 """
 import asyncio
+import logging
 from typing import Optional
-import structlog
 from telebot import types
 from telebot.async_telebot import AsyncTeleBot
 
@@ -13,7 +13,7 @@ from src.repo.telegram_repository import TelegramRepository
 from src.service.mqtt_proxy_service import MQTTProxyService
 
 
-logger = structlog.get_logger()
+logger = logging.getLogger(__name__)
 
 
 class TelegramCommandsHandler:
@@ -64,6 +64,11 @@ class TelegramCommandsHandler:
         async def handle_info(message: types.Message):
             await self._handle_info(message)
         
+        # Команда /get_chat_id
+        @self.bot.message_handler(commands=['get_chat_id'])
+        async def handle_get_chat_id(message: types.Message):
+            await self._handle_get_chat_id(message)
+        
         # Обработка всех остальных сообщений
         @self.bot.message_handler(func=lambda m: True)
         async def handle_unknown(message: types.Message):
@@ -88,9 +93,8 @@ class TelegramCommandsHandler:
                 "Обратитесь к администратору для получения доступа."
             )
             logger.warning(
-                "Попытка использования бота неразрешенным пользователем",
-                user_id=user_id,
-                username=message.from_user.username
+                f"Попытка использования бота неразрешенным пользователем: user_id={user_id}, "
+                f"username={message.from_user.username}"
             )
             return False
         
@@ -114,7 +118,7 @@ class TelegramCommandsHandler:
         )
         
         await self.bot.reply_to(message, welcome_text)
-        logger.info("Обработана команда /start", user_id=user.id)
+        logger.info(f"Обработана команда /start, user_id={user.id}")
     
     async def _handle_help(self, message: types.Message) -> None:
         """Обрабатывает команду /help."""
@@ -126,13 +130,14 @@ class TelegramCommandsHandler:
             "/start - начать работу с ботом\n"
             "/help - показать эту справку\n"
             "/status - показать статус подключений\n"
-            "/info - показать информацию о конфигурации\n\n"
+            "/info - показать информацию о конфигурации\n"
+            "/get_chat_id - получить ID текущего чата\n\n"
             "ℹ️ Бот автоматически пересылает сообщения от Meshtastic "
             "в настроенные Telegram чаты и MQTT брокеры."
         )
         
         await self.bot.reply_to(message, help_text)
-        logger.info("Обработана команда /help", user_id=message.from_user.id)
+        logger.info(f"Обработана команда /help, user_id={message.from_user.id}")
     
     async def _handle_status(self, message: types.Message) -> None:
         """Обрабатывает команду /status."""
@@ -166,7 +171,7 @@ class TelegramCommandsHandler:
         
         status_text = "\n".join(status_parts)
         await self.bot.reply_to(message, status_text)
-        logger.info("Обработана команда /status", user_id=user_id)
+        logger.info(f"Обработана команда /status, user_id={user_id}")
     
     async def _handle_info(self, message: types.Message) -> None:
         """Обрабатывает команду /info."""
@@ -205,7 +210,47 @@ class TelegramCommandsHandler:
         
         info_text = "\n".join(info_parts)
         await self.bot.reply_to(message, info_text)
-        logger.info("Обработана команда /info", user_id=message.from_user.id)
+        logger.info(f"Обработана команда /info, user_id={message.from_user.id}")
+    
+    async def _handle_get_chat_id(self, message: types.Message) -> None:
+        """Обрабатывает команду /get_chat_id для получения ID чата."""
+        if not await self._check_user_allowed(message):
+            return
+        
+        chat = message.chat
+        chat_info_parts = ["📋 Информация о чате:\n"]
+        
+        # Тип чата
+        chat_type_emoji = {
+            "private": "👤",
+            "group": "👥",
+            "supergroup": "👥",
+            "channel": "📢"
+        }
+        chat_type = chat.type
+        emoji = chat_type_emoji.get(chat_type, "❓")
+        chat_info_parts.append(f"{emoji} Тип чата: {chat_type}")
+        
+        # ID чата
+        chat_info_parts.append(f"🆔 Chat ID: `{chat.id}`")
+        
+        # Название чата (если есть)
+        if chat.title:
+            chat_info_parts.append(f"📝 Название: {chat.title}")
+        
+        # Username (если есть)
+        if chat.username:
+            chat_info_parts.append(f"🔗 Username: @{chat.username}")
+        
+        # Инструкция
+        if chat_type in ("group", "supergroup"):
+            chat_info_parts.append("\n💡 Для использования этого чата в боте:")
+            chat_info_parts.append(f"Добавьте в .env файл:")
+            chat_info_parts.append(f"`TELEGRAM_GROUP_CHAT_ID={chat.id}`")
+        
+        chat_info_text = "\n".join(chat_info_parts)
+        await self.bot.reply_to(message, chat_info_text, parse_mode="Markdown")
+        logger.info(f"Обработана команда /get_chat_id, chat_id={chat.id}, user_id={message.from_user.id}")
     
     async def _handle_unknown(self, message: types.Message) -> None:
         """Обрабатывает неизвестные сообщения."""
@@ -222,10 +267,10 @@ class TelegramCommandsHandler:
         )
         
         await self.bot.reply_to(message, reply_text)
+        text_preview = message.text[:50] if message.text else None
         logger.debug(
-            "Обработано неизвестное сообщение",
-            user_id=message.from_user.id,
-            text=message.text[:50] if message.text else None
+            f"Обработано неизвестное сообщение: user_id={message.from_user.id}, "
+            f"text={text_preview}"
         )
     
     async def start_polling(self) -> None:
@@ -236,11 +281,13 @@ class TelegramCommandsHandler:
         """
         logger.info("Запуск Telegram polling для обработки команд")
         try:
-            await self.bot.infinity_polling(none_stop=True, interval=0, timeout=20)
+            # В pyTelegramBotAPI 4.14+ infinity_polling автоматически обрабатывает ошибки
+            # Используем только необходимые параметры без non_stop (передается автоматически)
+            await self.bot.infinity_polling(timeout=20, skip_pending=True, request_timeout=30)
         except asyncio.CancelledError:
             logger.info("Telegram polling отменен")
             raise
         except Exception as e:
-            logger.error("Ошибка в Telegram polling", error=str(e))
+            logger.error(f"Ошибка в Telegram polling: {e}", exc_info=True)
             raise
 

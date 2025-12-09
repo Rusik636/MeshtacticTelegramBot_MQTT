@@ -4,13 +4,13 @@
 Отвечает за парсинг и обработку сообщений от Meshtastic.
 """
 import json
+import logging
 from typing import Dict, Any
-import structlog
 
 from src.domain.message import MeshtasticMessage
 
 
-logger = structlog.get_logger()
+logger = logging.getLogger(__name__)
 
 
 class MessageService:
@@ -60,18 +60,15 @@ class MessageService:
             )
             
             logger.debug(
-                "Распарсено Meshtastic сообщение",
-                topic=topic,
-                message_id=message_id,
-                from_node=from_node
+                f"Распарсено Meshtastic сообщение: topic={topic}, "
+                f"message_id={message_id}, from_node={from_node}"
             )
             
             return message
         except json.JSONDecodeError as e:
             logger.error(
-                "Ошибка парсинга JSON из MQTT сообщения",
-                topic=topic,
-                error=str(e)
+                f"Ошибка парсинга JSON из MQTT сообщения: topic={topic}, error={e}",
+                exc_info=True
             )
             # Возвращаем сообщение с минимальной информацией
             return MeshtasticMessage(
@@ -80,9 +77,8 @@ class MessageService:
             )
         except Exception as e:
             logger.error(
-                "Неожиданная ошибка при парсинге MQTT сообщения",
-                topic=topic,
-                error=str(e)
+                f"Неожиданная ошибка при парсинге MQTT сообщения: topic={topic}, error={e}",
+                exc_info=True
             )
             return MeshtasticMessage(
                 topic=topic,

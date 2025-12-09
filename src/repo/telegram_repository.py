@@ -3,15 +3,15 @@
 
 Использует паттерн Repository для абстракции работы с Telegram Bot API.
 """
+import logging
 from abc import ABC, abstractmethod
 from typing import Optional, List
-import structlog
 from telebot.async_telebot import AsyncTeleBot
 
 from src.config import TelegramConfig
 
 
-logger = structlog.get_logger()
+logger = logging.getLogger(__name__)
 
 
 class TelegramRepository(ABC):
@@ -103,12 +103,11 @@ class AsyncTelegramRepository(TelegramRepository):
         """
         try:
             await self.bot.send_message(chat_id, text, parse_mode=parse_mode)
-            logger.debug("Отправлено Telegram сообщение", chat_id=chat_id)
+            logger.debug(f"Отправлено Telegram сообщение: chat_id={chat_id}")
         except Exception as e:
             logger.error(
-                "Ошибка при отправке Telegram сообщения",
-                chat_id=chat_id,
-                error=str(e)
+                f"Ошибка при отправке Telegram сообщения: chat_id={chat_id}, error={e}",
+                exc_info=True
             )
             raise
     
@@ -128,8 +127,8 @@ class AsyncTelegramRepository(TelegramRepository):
             logger.info("Отправлено сообщение в групповой чат")
         except Exception as e:
             logger.error(
-                "Ошибка при отправке сообщения в групповой чат",
-                error=str(e)
+                f"Ошибка при отправке сообщения в групповой чат: {e}",
+                exc_info=True
             )
             raise
     
@@ -142,20 +141,16 @@ class AsyncTelegramRepository(TelegramRepository):
             text: Текст сообщения
         """
         if not self.is_user_allowed(user_id):
-            logger.warning(
-                "Попытка отправить сообщение неразрешенному пользователю",
-                user_id=user_id
-            )
+            logger.warning(f"Попытка отправить сообщение неразрешенному пользователю: user_id={user_id}")
             return
         
         try:
             await self.send_message(user_id, text)
-            logger.info("Отправлено сообщение пользователю", user_id=user_id)
+            logger.info(f"Отправлено сообщение пользователю: user_id={user_id}")
         except Exception as e:
             logger.error(
-                "Ошибка при отправке сообщения пользователю",
-                user_id=user_id,
-                error=str(e)
+                f"Ошибка при отправке сообщения пользователю: user_id={user_id}, error={e}",
+                exc_info=True
             )
             raise
     

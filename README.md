@@ -33,6 +33,17 @@
 - Telegram Bot Token (получить у [@BotFather](https://t.me/BotFather))
 - MQTT брокер (Mosquitto включен в docker-compose)
 
+## Настройка Meshtastic ноды
+
+Для отправки данных с ноды Meshtastic на MQTT брокер см. подробную инструкцию в файле [MESHTASTIC_SETUP.md](MESHTASTIC_SETUP.md).
+
+**Краткая инструкция:**
+1. Определите IP адрес вашего сервера в локальной сети
+2. В настройках ноды Meshtastic укажите:
+   - MQTT Server: `tcp://<IP_АДРЕС_СЕРВЕРА>:1883`
+   - MQTT Topic: `msh/2/json/#`
+3. Убедитесь, что порт 1883 доступен из локальной сети
+
 ## Установка и запуск
 
 ### Через Docker Compose (рекомендуется)
@@ -54,6 +65,8 @@ TELEGRAM_BOT_TOKEN=your_bot_token_here
 TELEGRAM_GROUP_CHAT_ID=your_group_chat_id_here
 TELEGRAM_ALLOWED_USER_IDS=123456789,987654321
 
+# ВАЖНО: Для Docker Compose используйте имя сервиса 'mosquitto'
+# Для локального запуска используйте 'localhost'
 MQTT_SOURCE_HOST=mosquitto
 MQTT_SOURCE_PORT=1883
 MQTT_SOURCE_TOPIC=msh/2/json/#
@@ -152,12 +165,43 @@ python main.py
 
 ### Получение Telegram Chat ID
 
-1. Добавьте бота в группу
-2. Отправьте сообщение в группу
-3. Используйте API: `https://api.telegram.org/bot<BOT_TOKEN>/getUpdates`
-4. Найдите `chat.id` в ответе
+Есть несколько способов получить `TELEGRAM_GROUP_CHAT_ID`:
 
-Или используйте бота [@userinfobot](https://t.me/userinfobot) для получения вашего user_id.
+#### Способ 1: Через команду бота (рекомендуется)
+
+1. Добавьте бота в группу
+2. Дайте боту права администратора (опционально, но рекомендуется)
+3. Отправьте команду `/get_chat_id` в группе
+4. Бот ответит с ID чата
+5. Скопируйте ID и добавьте в `.env`: `TELEGRAM_GROUP_CHAT_ID=<полученный_id>`
+
+#### Способ 2: Через Telegram API
+
+1. Добавьте бота в группу
+2. Отправьте любое сообщение в группу
+3. Откройте в браузере: `https://api.telegram.org/bot<BOT_TOKEN>/getUpdates`
+   - Замените `<BOT_TOKEN>` на ваш токен бота
+4. Найдите в ответе `"chat":{"id":-123456789}` - это и есть group_chat_id
+5. Обратите внимание: ID группы обычно отрицательное число (начинается с `-`)
+
+#### Способ 3: Через специальных ботов
+
+- [@getidsbot](https://t.me/getidsbot) - добавьте в группу и отправьте `/start`
+- [@userinfobot](https://t.me/userinfobot) - для получения вашего личного user_id
+
+#### Способ 4: Через код (для разработчиков)
+
+Добавьте временный обработчик в бота:
+```python
+@bot.message_handler(func=lambda m: True)
+def get_chat_id(message):
+    print(f"Chat ID: {message.chat.id}")
+```
+
+**Важно:**
+- ID группы обычно отрицательное число (например: `-1001234567890`)
+- ID личного чата - положительное число (например: `123456789`)
+- Для супергрупп ID начинается с `-100`
 
 ## Команды бота
 

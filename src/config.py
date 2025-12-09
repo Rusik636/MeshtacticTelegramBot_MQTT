@@ -1,14 +1,57 @@
 """
 Конфигурация приложения.
+Загружает переменные окружения из .env файла.
 
 Использует Pydantic Settings для валидации и загрузки из переменных окружения.
 """
 import os
+import sys
 import logging
 from typing import List, Optional
-import structlog
+from dotenv import load_dotenv
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Загружаем переменные окружения из .env
+load_dotenv()
+
+
+def setup_logging(level: Optional[str] = None, format_string: Optional[str] = None) -> None:
+    """
+    Настройка логирования приложения.
+    
+    Args:
+        level: Уровень логирования (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+               Если не указан, берется из переменной окружения LOG_LEVEL или INFO.
+        format_string: Формат строки логирования. Если не указан, используется стандартный.
+    """
+    log_level = level or os.getenv("LOG_LEVEL", "INFO").upper()
+    log_format = format_string or "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    
+    # Преобразуем строку уровня в константу logging
+    numeric_level = getattr(logging, log_level, logging.INFO)
+    
+    logging.basicConfig(
+        level=numeric_level,
+        format=log_format,
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+        ],
+        force=True,  # Перезаписываем существующую конфигурацию
+    )
+
+
+def setup_basic_logging() -> None:
+    """
+    Настраивает базовое логирование для отображения ошибок конфигурации.
+    
+    Используется до загрузки полной конфигурации, чтобы можно было логировать
+    ошибки при инициализации AppConfig.
+    """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s: %(message)s"
+    )
 
 
 class MQTTBrokerConfig(BaseSettings):
@@ -70,6 +113,38 @@ class TelegramConfig(BaseSettings):
         description="Список разрешенных user_id для личных сообщений (None = все)"
     )
     
+    @field_validator("group_chat_id", mode="before")
+    @classmethod
+    def parse_group_chat_id(cls, v: str | int | None) -> int | None:
+        """
+        Парсит group_chat_id из строки или числа.
+        
+        Обрабатывает пустые строки как None.
+        
+        Args:
+            v: Значение из переменной окружения или конфигурации
+            
+        Returns:
+            Целое число или None
+        """
+        if v is None:
+            return None
+        
+        if isinstance(v, int):
+            return v
+        
+        if isinstance(v, str):
+            v = v.strip()
+            if not v or v.lower() in ("none", "null", ""):
+                return None
+            
+            try:
+                return int(v)
+            except ValueError:
+                raise ValueError(f"Некорректный формат group_chat_id: {v}")
+        
+        return None
+    
     @field_validator("allowed_user_ids", mode="before")
     @classmethod
     def parse_allowed_user_ids(cls, v: str | List[int] | None) -> List[int] | None:
@@ -119,7 +194,8 @@ class AppConfig(BaseSettings):
     mqtt_source: MQTTBrokerConfig = Field(default_factory=MQTTBrokerConfig)
     
     # Telegram
-    telegram: TelegramConfig = Field(description="Конфигурация Telegram бота")
+    # Используем default_factory для автоматической загрузки из переменных окружения
+    telegram: TelegramConfig = Field(default_factory=TelegramConfig)
     
     # MQTT прокси (список целей)
     # По умолчанию загружается одна цель из переменных окружения с префиксом MQTT_PROXY_TARGET_
@@ -168,33 +244,9 @@ class AppConfig(BaseSettings):
     
     def setup_logging(self) -> None:
         """
-        Настраивает структурированное логирование на основе конфигурации.
+        Настраивает логирование на основе конфигурации.
         
-        Использует structlog для структурированного логирования с поддержкой
-        JSON и текстового форматов.
+        Использует стандартный модуль logging Python.
         """
-        # Устанавливаем уровень логирования для стандартного logging
-        log_level = getattr(logging, self.log_level.upper(), logging.INFO)
-        logging.basicConfig(level=log_level)
-        
-        processors = [
-            structlog.contextvars.merge_contextvars,
-            structlog.processors.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-        ]
-        
-        if self.log_format == "json":
-            processors.append(structlog.processors.JSONRenderer())
-        else:
-            processors.append(structlog.processors.KeyValueRenderer())
-        
-        structlog.configure(
-            processors=processors,
-            wrapper_class=structlog.make_filtering_bound_logger(log_level),
-            context_class=dict,
-            logger_factory=structlog.PrintLoggerFactory(),
-            cache_logger_on_first_use=True,
-        )
+        setup_logging(level=self.log_level)
 

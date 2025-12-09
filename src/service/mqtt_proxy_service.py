@@ -4,9 +4,9 @@
 Отвечает за пересылку сообщений в другие MQTT брокеры.
 Использует паттерн Strategy для поддержки множественных целей прокси.
 """
-from typing import List, Dict, Any
 import json
-import structlog
+import logging
+from typing import List, Dict, Any
 from aiomqtt import Client as MQTTClient
 from aiomqtt.exceptions import MqttError
 
@@ -14,7 +14,7 @@ from src.config import MQTTProxyTargetConfig
 from src.domain.message import MeshtasticMessage
 
 
-logger = structlog.get_logger()
+logger = logging.getLogger(__name__)
 
 
 class MQTTProxyTarget:
@@ -38,36 +38,34 @@ class MQTTProxyTarget:
     async def connect(self) -> None:
         """Подключается к целевому MQTT брокеру."""
         if not self.config.enabled:
-            logger.debug("Прокси цель отключена", name=self.config.name)
+            logger.debug(f"Прокси цель отключена: name={self.config.name}")
             return
         
         try:
             logger.info(
-                "Подключение к целевому MQTT брокеру",
-                name=self.config.name,
-                host=self.config.host,
-                port=self.config.port
+                f"Подключение к целевому MQTT брокеру: name={self.config.name}, "
+                f"host={self.config.host}, port={self.config.port}"
             )
             
             client_id = self.config.client_id or f"meshtastic-proxy-{self.config.name}"
             
+            # В aiomqtt 2.0+ client_id передается через параметр identifier как строка
             self._client = MQTTClient(
                 hostname=self.config.host,
                 port=self.config.port,
                 username=self.config.username,
                 password=self.config.password,
-                client_id=client_id,
+                identifier=client_id,
             )
             
             await self._client.__aenter__()
             self._connected = True
             
-            logger.info("Успешно подключен к целевому MQTT брокеру", name=self.config.name)
+            logger.info(f"Успешно подключен к целевому MQTT брокеру: name={self.config.name}")
         except MqttError as e:
             logger.error(
-                "Ошибка подключения к целевому MQTT брокеру",
-                name=self.config.name,
-                error=str(e)
+                f"Ошибка подключения к целевому MQTT брокеру: name={self.config.name}, error={e}",
+                exc_info=True
             )
             self._connected = False
             raise
@@ -77,12 +75,11 @@ class MQTTProxyTarget:
         if self._client and self._connected:
             try:
                 await self._client.__aexit__(None, None, None)
-                logger.info("Отключен от целевого MQTT брокера", name=self.config.name)
+                logger.info(f"Отключен от целевого MQTT брокера: name={self.config.name}")
             except Exception as e:
                 logger.error(
-                    "Ошибка при отключении от целевого MQTT брокера",
-                    name=self.config.name,
-                    error=str(e)
+                    f"Ошибка при отключении от целевого MQTT брокера: name={self.config.name}, error={e}",
+                    exc_info=True
                 )
             finally:
                 self._client = None
@@ -99,15 +96,12 @@ class MQTTProxyTarget:
             return
         
         if not self._connected:
-            logger.warning(
-                "Попытка публикации в неподключенный брокер",
-                name=self.config.name
-            )
+            logger.warning(f"Попытка публикации в неподключенный брокер: name={self.config.name}")
             return
         
         try:
-            # Формируем топик
-            topic = message.topic
+            # Формируем топик (в aiomqtt 2.0+ topic может быть строкой или объектом)
+            topic = str(message.topic) if not isinstance(message.topic, str) else message.topic
             if self.config.topic_prefix:
                 # Если задан префикс, добавляем его
                 if topic.startswith("/"):
@@ -121,17 +115,14 @@ class MQTTProxyTarget:
             await self._client.publish(topic, payload, qos=self.config.qos)
             
             logger.debug(
-                "Опубликовано сообщение в целевой брокер",
-                name=self.config.name,
-                topic=topic,
-                qos=self.config.qos
+                f"Опубликовано сообщение в целевой брокер: name={self.config.name}, "
+                f"topic={topic}, qos={self.config.qos}"
             )
         except MqttError as e:
             logger.error(
-                "Ошибка при публикации в целевой брокер",
-                name=self.config.name,
-                topic=topic,
-                error=str(e)
+                f"Ошибка при публикации в целевой брокер: name={self.config.name}, "
+                f"topic={topic}, error={e}",
+                exc_info=True
             )
             # Не пробрасываем исключение, чтобы не прерывать обработку других целей
 
@@ -153,7 +144,7 @@ class MQTTProxyService:
         self._targets: List[MQTTProxyTarget] = [
             MQTTProxyTarget(config) for config in targets if config.enabled
         ]
-        logger.info("Инициализирован MQTT Proxy Service", targets_count=len(self._targets))
+        logger.info(f"Инициализирован MQTT Proxy Service: targets_count={len(self._targets)}")
     
     async def start(self) -> None:
         """Запускает сервис: подключается ко всем целевым брокерам."""
@@ -162,9 +153,8 @@ class MQTTProxyService:
                 await target.connect()
             except Exception as e:
                 logger.error(
-                    "Не удалось подключиться к целевому брокеру",
-                    name=target.config.name,
-                    error=str(e)
+                    f"Не удалось подключиться к целевому брокеру: name={target.config.name}, error={e}",
+                    exc_info=True
                 )
                 # Продолжаем работу с другими целями
     
@@ -175,9 +165,8 @@ class MQTTProxyService:
                 await target.disconnect()
             except Exception as e:
                 logger.error(
-                    "Ошибка при отключении от целевого брокера",
-                    name=target.config.name,
-                    error=str(e)
+                    f"Ошибка при отключении от целевого брокера: name={target.config.name}, error={e}",
+                    exc_info=True
                 )
     
     async def proxy_message(self, message: MeshtasticMessage) -> None:
@@ -196,9 +185,8 @@ class MQTTProxyService:
                 await target.publish_message(message)
             except Exception as e:
                 logger.error(
-                    "Ошибка при проксировании сообщения",
-                    target_name=target.config.name,
-                    error=str(e)
+                    f"Ошибка при проксировании сообщения: target_name={target.config.name}, error={e}",
+                    exc_info=True
                 )
                 # Продолжаем с другими целями
 
