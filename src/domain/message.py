@@ -4,8 +4,11 @@
 Представляет структурированное сообщение, полученное из MQTT.
 """
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TYPE_CHECKING
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from src.service.node_cache_service import NodeCacheService
 
 
 class MeshtasticMessage(BaseModel):
@@ -96,12 +99,16 @@ class MeshtasticMessage(BaseModel):
         else:
             return "⚫"  # Очень плохой
     
-    def format_for_telegram(self) -> str:
+    def format_for_telegram(self, node_cache_service: Optional["NodeCacheService"] = None) -> str:
         """
         Форматирует сообщение для отправки в Telegram.
         
         Поддерживает UTF-8 символы в названиях и тегах нод.
         Отображает качество сигнала с цветными индикаторами.
+        Добавляет ссылку на местоположение, если доступно.
+        
+        Args:
+            node_cache_service: Сервис кэша нод для получения координат (опционально)
         
         Returns:
             Отформатированная строка сообщения.
@@ -127,11 +134,11 @@ class MeshtasticMessage(BaseModel):
         if sender_info:
             # Объединяем информацию об отправителе
             sender_str = " ".join(sender_info)
-            parts.append(f"📡 От: {sender_str}")
+            parts.append(f"📡 <b>От:</b> {sender_str}")
         
         # Текст сообщения (может содержать UTF-8 символы)
         if self.text:
-            parts.append(f"💬 {self.text}")
+            parts.append(f"💬 <b>Текст:</b> {self.text}")
         
         # Качество сигнала (RSSI и SNR с отдельными индикаторами)
         signal_parts = []
@@ -145,6 +152,17 @@ class MeshtasticMessage(BaseModel):
         
         if signal_parts:
             parts.append(f"📶 {' | '.join(signal_parts)}")
+        
+        # Местоположение (ссылка на Яндекс Карты)
+        if node_cache_service and self.from_node:
+            position = node_cache_service.get_node_position(self.from_node)
+            if position:
+                latitude, longitude, altitude = position
+                # Формируем ссылку на Яндекс Карты
+                yandex_map_url = f"https://yandex.ru/maps/?pt={longitude},{latitude}&z=15&l=map"
+                parts.append(f"📍 <a href=\"{yandex_map_url}\">Местоположение</a>")
+            else:
+                parts.append("📍 Местоположение неизвестно")
         
         # Временная метка в формате чч:мм дд.мм.гггг
         if self.timestamp:

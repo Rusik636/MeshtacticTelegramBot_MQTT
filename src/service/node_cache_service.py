@@ -21,7 +21,11 @@ class NodeInfo:
         node_id: str,
         longname: Optional[str] = None,
         shortname: Optional[str] = None,
-        last_updated: Optional[datetime] = None
+        last_updated: Optional[datetime] = None,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
+        altitude: Optional[int] = None,
+        last_position_updated: Optional[datetime] = None
     ):
         """
         Инициализирует информацию о ноде.
@@ -30,21 +34,38 @@ class NodeInfo:
             node_id: ID ноды (например, !698535e0)
             longname: Полное название ноды
             shortname: Короткое имя ноды
-            last_updated: Время последнего обновления
+            last_updated: Время последнего обновления информации о ноде
+            latitude: Широта (градусы)
+            longitude: Долгота (градусы)
+            altitude: Высота над уровнем моря (метры)
+            last_position_updated: Время последнего обновления координат
         """
         self.node_id = node_id
         self.longname = longname
         self.shortname = shortname
         self.last_updated = last_updated or datetime.utcnow()
+        self.latitude = latitude
+        self.longitude = longitude
+        self.altitude = altitude
+        self.last_position_updated = last_position_updated
     
     def to_dict(self) -> Dict:
         """Преобразует в словарь для сериализации."""
-        return {
+        result = {
             "node_id": self.node_id,
             "longname": self.longname,
             "shortname": self.shortname,
             "last_updated": self.last_updated.isoformat()
         }
+        if self.latitude is not None:
+            result["latitude"] = self.latitude
+        if self.longitude is not None:
+            result["longitude"] = self.longitude
+        if self.altitude is not None:
+            result["altitude"] = self.altitude
+        if self.last_position_updated:
+            result["last_position_updated"] = self.last_position_updated.isoformat()
+        return result
     
     @classmethod
     def from_dict(cls, data: Dict) -> "NodeInfo":
@@ -56,12 +77,27 @@ class NodeInfo:
             except (ValueError, TypeError):
                 last_updated = datetime.utcnow()
         
+        last_position_updated = None
+        if data.get("last_position_updated"):
+            try:
+                last_position_updated = datetime.fromisoformat(data["last_position_updated"])
+            except (ValueError, TypeError):
+                last_position_updated = None
+        
         return cls(
             node_id=data["node_id"],
             longname=data.get("longname"),
             shortname=data.get("shortname"),
-            last_updated=last_updated
+            last_updated=last_updated,
+            latitude=data.get("latitude"),
+            longitude=data.get("longitude"),
+            altitude=data.get("altitude"),
+            last_position_updated=last_position_updated
         )
+    
+    def has_position(self) -> bool:
+        """Проверяет, есть ли координаты ноды."""
+        return self.latitude is not None and self.longitude is not None
 
 
 class NodeCacheService:
@@ -195,6 +231,100 @@ class NodeCacheService:
         # Сохраняем на диск
         self.save_cache()
         return True
+    
+    def update_node_position(
+        self,
+        node_id: str,
+        latitude: float,
+        longitude: float,
+        altitude: Optional[int] = None,
+        force_disk_update: bool = False
+    ) -> bool:
+        """
+        Обновляет координаты ноды в кэше.
+        
+        Всегда обновляет кэш в памяти. На диск сохраняет только если:
+        - force_disk_update=True, или
+        - прошло более 3 дней с последнего сохранения координат на диск
+        
+        Args:
+            node_id: ID ноды (например, !698535e0)
+            latitude: Широта (градусы)
+            longitude: Долгота (градусы)
+            altitude: Высота над уровнем моря (метры, опционально)
+            force_disk_update: Принудительное сохранение на диск
+            
+        Returns:
+            True, если координаты были обновлены, False если пропущено сохранение на диск
+        """
+        existing_node = self._cache.get(node_id)
+        
+        # Определяем, нужно ли сохранять на диск
+        should_save_to_disk = force_disk_update
+        
+        if existing_node and not force_disk_update:
+            if existing_node.last_position_updated:
+                time_since_update = datetime.utcnow() - existing_node.last_position_updated
+                if time_since_update >= timedelta(days=self.update_interval_days):
+                    should_save_to_disk = True
+            else:
+                # Если координат еще не было, сохраняем на диск
+                should_save_to_disk = True
+        
+        # Обновляем или создаем запись
+        if existing_node:
+            # Обновляем существующую запись
+            old_lat = existing_node.latitude
+            old_lon = existing_node.longitude
+            existing_node.latitude = latitude
+            existing_node.longitude = longitude
+            if altitude is not None:
+                existing_node.altitude = altitude
+            existing_node.last_position_updated = datetime.utcnow()
+            
+            if old_lat is not None and old_lon is not None:
+                logger.info(
+                    f"Обновлены координаты ноды в кэше: {node_id} "
+                    f"({old_lat:.6f}, {old_lon:.6f}) → ({latitude:.6f}, {longitude:.6f})"
+                )
+            else:
+                logger.info(f"Добавлены координаты ноды в кэш: {node_id} ({latitude:.6f}, {longitude:.6f})")
+        else:
+            # Создаем новую запись
+            new_node = NodeInfo(
+                node_id=node_id,
+                latitude=latitude,
+                longitude=longitude,
+                altitude=altitude,
+                last_position_updated=datetime.utcnow()
+            )
+            self._cache[node_id] = new_node
+            logger.info(f"Добавлены координаты новой ноды в кэш: {node_id} ({latitude:.6f}, {longitude:.6f})")
+            should_save_to_disk = True
+        
+        # Сохраняем на диск, если нужно
+        if should_save_to_disk:
+            self.save_cache()
+            logger.info(f"Сохранены координаты ноды на диск: {node_id} ({latitude:.6f}, {longitude:.6f})")
+            return True
+        else:
+            logger.debug(f"Координаты обновлены только в кэше (не сохраняем на диск): {node_id}")
+            return False
+    
+    def get_node_position(self, node_id: str) -> Optional[tuple[float, float, Optional[int]]]:
+        """
+        Получает координаты ноды из кэша.
+        
+        Args:
+            node_id: ID ноды
+            
+        Returns:
+            Кортеж (latitude, longitude, altitude) или None, если координаты не найдены
+        """
+        node_info = self.get_node_info(node_id)
+        if node_info and node_info.has_position():
+            return (node_info.latitude, node_info.longitude, node_info.altitude)
+        return None
     
     def get_node_name(self, node_id: str) -> Optional[str]:
         """

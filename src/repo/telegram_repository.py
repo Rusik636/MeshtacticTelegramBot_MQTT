@@ -91,7 +91,7 @@ class AsyncTelegramRepository(TelegramRepository):
         self,
         chat_id: int,
         text: str,
-        parse_mode: Optional[str] = None
+        parse_mode: Optional[str] = "HTML"
     ) -> None:
         """
         Отправляет сообщение в чат.
@@ -99,7 +99,7 @@ class AsyncTelegramRepository(TelegramRepository):
         Args:
             chat_id: ID чата
             text: Текст сообщения
-            parse_mode: Режим парсинга (HTML, Markdown и т.д.)
+            parse_mode: Режим парсинга (HTML, Markdown и т.д.). По умолчанию HTML для поддержки ссылок.
         """
         try:
             await self.bot.send_message(chat_id, text, parse_mode=parse_mode)

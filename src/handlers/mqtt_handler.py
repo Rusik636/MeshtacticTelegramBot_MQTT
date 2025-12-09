@@ -70,18 +70,13 @@ class MQTTMessageHandlerImpl(MQTTMessageHandler):
             # Парсим сообщение
             message: MeshtasticMessage = self.message_service.parse_mqtt_message(topic, payload)
             
-            # Пропускаем сообщения типа nodeinfo и position (они обрабатываются для обновления кэша)
-            if message.message_type in ("nodeinfo", "position"):
-                logger.debug(f"Пропущено сообщение типа {message.message_type} (используется только для обновления кэша)")
-                return
-            
-            # Отправляем только текстовые сообщения в Telegram
+            # Отправляем в Telegram только текстовые сообщения
+            # Сообщения типа nodeinfo и position обрабатываются для обновления кэша, но не отправляются
             if message.message_type != "text":
-                logger.debug(f"Пропущено сообщение типа {message.message_type}")
                 return
             
-            # Форматируем для Telegram
-            telegram_text = message.format_for_telegram()
+            # Форматируем для Telegram (передаем сервис кэша для получения координат)
+            telegram_text = message.format_for_telegram(node_cache_service=self.message_service.node_cache_service)
             
             # Отправляем в групповой чат
             try:

@@ -85,6 +85,60 @@ class MessageService:
                             shortname=from_node_short,
                             force=False  # Обновляем только если прошло 3 дня
                         )
+            elif message_type == "position":
+                # Для position извлекаем координаты из payload
+                payload_data = raw_payload.get("payload", {})
+                if isinstance(payload_data, dict) and self.node_cache_service:
+                    # Извлекаем ID ноды из sender или from
+                    node_id = raw_payload.get("sender")
+                    if not node_id:
+                        # Если sender нет, пробуем конвертировать from в hex формат
+                        from_node_raw = raw_payload.get("from")
+                        if from_node_raw:
+                            if isinstance(from_node_raw, (int, str)):
+                                node_id = f"!{hex(int(from_node_raw))[2:]}" if isinstance(from_node_raw, int) else str(from_node_raw)
+                    
+                    if node_id:
+                        # Извлекаем координаты
+                        # Meshtastic передает координаты как latitude_i и longitude_i
+                        # Формат может быть разным: либо уже в градусах, либо в градусах * 1e7
+                        latitude_i = payload_data.get("latitude_i")
+                        longitude_i = payload_data.get("longitude_i")
+                        altitude = payload_data.get("altitude")
+                        
+                        if latitude_i is not None and longitude_i is not None:
+                            # Конвертируем координаты
+                            # Если значения большие (> 1000), значит это формат * 1e7, иначе уже градусы
+                            latitude_raw = float(latitude_i)
+                            longitude_raw = float(longitude_i)
+                            
+                            if abs(latitude_raw) > 1000 or abs(longitude_raw) > 1000:
+                                # Формат Meshtastic: градусы * 1e7
+                                latitude = latitude_raw / 1e7
+                                longitude = longitude_raw / 1e7
+                            else:
+                                # Уже в градусах
+                                latitude = latitude_raw
+                                longitude = longitude_raw
+                            
+                            logger.info(
+                                f"Получены координаты ноды: {node_id} "
+                                f"({latitude:.6f}, {longitude:.6f}, altitude={altitude})"
+                            )
+                            
+                            # Обновляем координаты в кэше
+                            # force_disk_update=False - сохраняем на диск только если прошло 3 дня
+                            self.node_cache_service.update_node_position(
+                                node_id=node_id,
+                                latitude=latitude,
+                                longitude=longitude,
+                                altitude=altitude,
+                                force_disk_update=False
+                            )
+                        else:
+                            logger.warning(f"Получено сообщение position без координат для ноды: {node_id}")
+                    else:
+                        logger.warning("Получено сообщение position без ID ноды (sender/from отсутствует)")
             else:
                 # Для других типов сообщений пробуем стандартные поля
                 if "sender" in raw_payload:
