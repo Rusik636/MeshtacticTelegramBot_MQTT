@@ -91,7 +91,8 @@ class AsyncTelegramRepository(TelegramRepository):
         self,
         chat_id: int,
         text: str,
-        parse_mode: Optional[str] = "HTML"
+        parse_mode: Optional[str] = "HTML",
+        reply_to_message_id: Optional[int] = None
     ) -> None:
         """
         Отправляет сообщение в чат.
@@ -100,15 +101,22 @@ class AsyncTelegramRepository(TelegramRepository):
             chat_id: ID чата
             text: Текст сообщения
             parse_mode: Режим парсинга (HTML, Markdown и т.д.). По умолчанию HTML для поддержки ссылок.
+            reply_to_message_id: ID сообщения для ответа (для создания тредов в супергруппах)
         """
         try:
-            await self.bot.send_message(
-                chat_id, 
-                text, 
-                parse_mode=parse_mode,
-                disable_web_page_preview=True  # Отключаем предпросмотр ссылок
-            )
-            logger.debug(f"Отправлено Telegram сообщение: chat_id={chat_id}")
+            message_params = {
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": parse_mode,
+                "disable_web_page_preview": True  # Отключаем предпросмотр ссылок
+            }
+            
+            # Добавляем reply_to_message_id, если указан
+            if reply_to_message_id is not None:
+                message_params["reply_to_message_id"] = reply_to_message_id
+            
+            await self.bot.send_message(**message_params)
+            logger.debug(f"Отправлено Telegram сообщение: chat_id={chat_id}, reply_to_message_id={reply_to_message_id}")
         except Exception as e:
             logger.error(
                 f"Ошибка при отправке Telegram сообщения: chat_id={chat_id}, error={e}",
@@ -120,6 +128,9 @@ class AsyncTelegramRepository(TelegramRepository):
         """
         Отправляет сообщение в групповой чат.
         
+        Если настроен reply_to_message_id, все сообщения будут отправляться как ответ,
+        создавая тред (thread) в супергруппах.
+        
         Args:
             text: Текст сообщения
         """
@@ -128,8 +139,15 @@ class AsyncTelegramRepository(TelegramRepository):
             return
         
         try:
-            await self.send_message(self.config.group_chat_id, text)
-            logger.info("Отправлено сообщение в групповой чат")
+            await self.send_message(
+                self.config.group_chat_id,
+                text,
+                reply_to_message_id=self.config.reply_to_message_id
+            )
+            logger.info(
+                f"Отправлено сообщение в групповой чат "
+                f"(reply_to_message_id={self.config.reply_to_message_id})"
+            )
         except Exception as e:
             logger.error(
                 f"Ошибка при отправке сообщения в групповой чат: {e}",
