@@ -91,7 +91,8 @@ class AsyncTelegramRepository(TelegramRepository):
         self,
         chat_id: int,
         text: str,
-        parse_mode: Optional[str] = "HTML"
+        parse_mode: Optional[str] = "HTML",
+        message_thread_id: Optional[int] = None
     ) -> None:
         """
         Отправляет сообщение в чат.
@@ -100,25 +101,35 @@ class AsyncTelegramRepository(TelegramRepository):
             chat_id: ID чата
             text: Текст сообщения
             parse_mode: Режим парсинга (HTML, Markdown и т.д.). По умолчанию HTML для поддержки ссылок.
+            message_thread_id: ID темы (для форумов). Если None - отправляется в общий чат.
         """
         try:
-            await self.bot.send_message(
-                chat_id, 
-                text, 
-                parse_mode=parse_mode,
-                disable_web_page_preview=True  # Отключаем предпросмотр ссылок
-            )
-            logger.debug(f"Отправлено Telegram сообщение: chat_id={chat_id}")
+            message_params = {
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": parse_mode,
+                "disable_web_page_preview": True  # Отключаем предпросмотр ссылок
+            }
+            
+            # Добавляем message_thread_id только если указан
+            if message_thread_id is not None:
+                message_params["message_thread_id"] = message_thread_id
+            
+            await self.bot.send_message(**message_params)
+            if message_thread_id:
+                logger.debug(f"Отправлено Telegram сообщение: chat_id={chat_id}, thread_id={message_thread_id}")
+            else:
+                logger.debug(f"Отправлено Telegram сообщение: chat_id={chat_id}")
         except Exception as e:
             logger.error(
-                f"Ошибка при отправке Telegram сообщения: chat_id={chat_id}, error={e}",
+                f"Ошибка при отправке Telegram сообщения: chat_id={chat_id}, thread_id={message_thread_id}, error={e}",
                 exc_info=True
             )
             raise
     
     async def send_to_group(self, text: str) -> None:
         """
-        Отправляет сообщение в групповой чат.
+        Отправляет сообщение в групповой чат (или в тему, если настроено).
         
         Args:
             text: Текст сообщения
@@ -128,8 +139,15 @@ class AsyncTelegramRepository(TelegramRepository):
             return
         
         try:
-            await self.send_message(self.config.group_chat_id, text)
-            logger.info("Отправлено сообщение в групповой чат")
+            await self.send_message(
+                self.config.group_chat_id,
+                text,
+                message_thread_id=self.config.group_topic_id
+            )
+            if self.config.group_topic_id:
+                logger.info(f"Отправлено сообщение в тему группы (thread_id={self.config.group_topic_id})")
+            else:
+                logger.info("Отправлено сообщение в групповой чат")
         except Exception as e:
             logger.error(
                 f"Ошибка при отправке сообщения в групповой чат: {e}",

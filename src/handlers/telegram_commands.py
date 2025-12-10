@@ -69,6 +69,11 @@ class TelegramCommandsHandler:
         async def handle_get_chat_id(message: types.Message):
             await self._handle_get_chat_id(message)
         
+        # Команда /get_topic_id
+        @self.bot.message_handler(commands=['get_topic_id'])
+        async def handle_get_topic_id(message: types.Message):
+            await self._handle_get_topic_id(message)
+        
         # Обработка всех остальных сообщений
         @self.bot.message_handler(func=lambda m: True)
         async def handle_unknown(message: types.Message):
@@ -131,7 +136,8 @@ class TelegramCommandsHandler:
             "/help - показать эту справку\n"
             "/status - показать статус подключений\n"
             "/info - показать информацию о конфигурации\n"
-            "/get_chat_id - получить ID текущего чата\n\n"
+            "/get_chat_id - получить ID текущего чата\n"
+            "/get_topic_id - получить ID темы форума (работает только в темах)\n\n"
             "ℹ️ Бот автоматически пересылает сообщения от Meshtastic "
             "в настроенные Telegram чаты и MQTT брокеры."
         )
@@ -182,9 +188,13 @@ class TelegramCommandsHandler:
         
         # Информация о групповом чате
         if self.telegram_repo.config.group_chat_id:
-            info_parts.append(f" group_chat_id: {self.telegram_repo.config.group_chat_id}")
+            info_parts.append(f"👥 Групповой чат: {self.telegram_repo.config.group_chat_id}")
+            if self.telegram_repo.config.group_topic_id:
+                info_parts.append(f"🧵 Тема форума: {self.telegram_repo.config.group_topic_id}")
+            else:
+                info_parts.append("🧵 Тема форума: не настроена (сообщения в общий чат)")
         else:
-            info_parts.append(" group_chat_id: не настроен")
+            info_parts.append("👥 Групповой чат: не настроен")
         
         # Информация о разрешенных пользователях
         allowed_users = self.telegram_repo.config.allowed_user_ids
@@ -242,15 +252,67 @@ class TelegramCommandsHandler:
         if chat.username:
             chat_info_parts.append(f"🔗 Username: @{chat.username}")
         
+        # ID темы (если команда отправлена из темы форума)
+        if hasattr(message, 'message_thread_id') and message.message_thread_id:
+            chat_info_parts.append(f"\n🧵 Topic ID: `{message.message_thread_id}`")
+            chat_info_parts.append("\n💡 Это сообщение отправлено в тему форума!")
+            chat_info_parts.append("Для отправки сообщений в эту тему добавьте в .env:")
+            chat_info_parts.append(f"```")
+            chat_info_parts.append(f"TELEGRAM_GROUP_CHAT_ID={chat.id}")
+            chat_info_parts.append(f"TELEGRAM_GROUP_TOPIC_ID={message.message_thread_id}")
+            chat_info_parts.append(f"```")
+        
         # Инструкция
         if chat_type in ("group", "supergroup"):
             chat_info_parts.append("\n💡 Для использования этого чата в боте:")
             chat_info_parts.append(f"Добавьте в .env файл:")
             chat_info_parts.append(f"`TELEGRAM_GROUP_CHAT_ID={chat.id}`")
+            if not (hasattr(message, 'message_thread_id') and message.message_thread_id):
+                chat_info_parts.append("\n📌 Для отправки в конкретную тему:")
+                chat_info_parts.append("Отправьте команду `/get_topic_id` прямо в теме форума")
         
         chat_info_text = "\n".join(chat_info_parts)
         await self.bot.reply_to(message, chat_info_text, parse_mode="Markdown")
         logger.info(f"Обработана команда /get_chat_id, chat_id={chat.id}, user_id={message.from_user.id}")
+    
+    async def _handle_get_topic_id(self, message: types.Message) -> None:
+        """Обрабатывает команду /get_topic_id для получения ID темы форума."""
+        if not await self._check_user_allowed(message):
+            return
+        
+        # Проверяем, отправлена ли команда из темы форума
+        if not hasattr(message, 'message_thread_id') or not message.message_thread_id:
+            reply_text = (
+                "❌ Эта команда работает только в темах форума.\n\n"
+                "💡 Отправьте команду `/get_topic_id` прямо в теме форума, "
+                "чтобы получить её ID."
+            )
+            await self.bot.reply_to(message, reply_text)
+            return
+        
+        topic_id = message.message_thread_id
+        chat = message.chat
+        
+        topic_info_parts = ["🧵 Информация о теме форума:\n"]
+        topic_info_parts.append(f"🆔 Topic ID: `{topic_id}`")
+        topic_info_parts.append(f"💬 Chat ID: `{chat.id}`")
+        
+        if chat.title:
+            topic_info_parts.append(f"📝 Группа: {chat.title}")
+        
+        topic_info_parts.append("\n💡 Для отправки сообщений в эту тему:")
+        topic_info_parts.append("Добавьте в .env файл:")
+        topic_info_parts.append(f"```")
+        topic_info_parts.append(f"TELEGRAM_GROUP_CHAT_ID={chat.id}")
+        topic_info_parts.append(f"TELEGRAM_GROUP_TOPIC_ID={topic_id}")
+        topic_info_parts.append(f"```")
+        
+        topic_info_parts.append("\n📌 После этого все сообщения от Meshtastic")
+        topic_info_parts.append("будут отправляться в эту тему.")
+        
+        topic_info_text = "\n".join(topic_info_parts)
+        await self.bot.reply_to(message, topic_info_text, parse_mode="Markdown")
+        logger.info(f"Обработана команда /get_topic_id, user_id={message.from_user.id}, topic_id={topic_id}")
     
     async def _handle_unknown(self, message: types.Message) -> None:
         """Обрабатывает неизвестные сообщения."""
