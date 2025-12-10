@@ -7,6 +7,7 @@ WORKDIR /app
 # Устанавливаем системные зависимости
 RUN apt-get update && apt-get install -y \
     gcc \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # Копируем файл зависимостей
@@ -25,6 +26,7 @@ USER appuser
 # Устанавливаем переменные окружения
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV TZ=Europe/Moscow
 
 # Точка входа
 CMD ["python", "main.py"]

@@ -3,6 +3,8 @@ services:
   mosquitto:
     image: eclipse-mosquitto:2.0
     container_name: meshtastic-mosquitto
+    environment:
+      - TZ=Europe/Moscow
     ports:
       - "1883:1883"      # MQTT порт
       - "9001:9001"      # WebSocket порт (опционально)
@@ -26,6 +28,8 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: meshtastic-telegram-bot
+    environment:
+      - TZ=Europe/Moscow
     env_file:
       - .env
     volumes:
