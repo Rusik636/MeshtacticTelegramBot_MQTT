@@ -20,6 +20,7 @@ Meshtastic (topics с `/e/`), декодирует их через meshtastic.pr
   pretty: true
   color: true
 """
+
 import argparse
 import asyncio
 import json
@@ -32,8 +33,10 @@ import aiomqtt
 from google.protobuf.json_format import MessageToDict
 from meshtastic.protobuf import mqtt_pb2
 import yaml
+
 try:
     import unishox2_py  # type: ignore
+
     UNISHOX_AVAILABLE = True
 except Exception:
     UNISHOX_AVAILABLE = False
@@ -90,13 +93,17 @@ def decode_payload(payload: bytes) -> Dict[str, Any]:
 
                 # TEXT_MESSAGE_APP
                 if "text_message" in portnum and "compressed" not in portnum:
-                    decoded["payload_decoded"] = decoded_bytes.decode("utf-8", errors="replace")
+                    decoded["payload_decoded"] = decoded_bytes.decode(
+                        "utf-8", errors="replace"
+                    )
 
                 # TEXT_MESSAGE_COMPRESSED_APP (unishox2)
                 elif "text_message_compressed" in portnum and UNISHOX_AVAILABLE:
                     try:
                         decompressed = unishox2_py.decompress(decoded_bytes)
-                        decoded["payload_decoded"] = decompressed.decode("utf-8", errors="replace")
+                        decoded["payload_decoded"] = decompressed.decode(
+                            "utf-8", errors="replace"
+                        )
                         decoded["payload_unishox"] = True
                     except Exception:
                         decoded["payload_unishox_error"] = True
@@ -105,6 +112,7 @@ def decode_payload(payload: bytes) -> Dict[str, Any]:
                 elif "nodeinfo" in portnum:
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
+
                         user_msg = mesh_pb2.User()
                         user_msg.ParseFromString(decoded_bytes)
                         decoded["payload_decoded"] = MessageToDict(
@@ -117,6 +125,7 @@ def decode_payload(payload: bytes) -> Dict[str, Any]:
                 elif "position" in portnum:
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
+
                         pos = mesh_pb2.Position()
                         pos.ParseFromString(decoded_bytes)
                         decoded["payload_decoded"] = MessageToDict(
@@ -129,6 +138,7 @@ def decode_payload(payload: bytes) -> Dict[str, Any]:
                 elif "waypoint" in portnum:
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
+
                         wp = mesh_pb2.Waypoint()
                         wp.ParseFromString(decoded_bytes)
                         decoded["payload_decoded"] = MessageToDict(
@@ -141,6 +151,7 @@ def decode_payload(payload: bytes) -> Dict[str, Any]:
                 elif "telemetry" in portnum:
                     try:
                         from meshtastic.protobuf import telemetry_pb2  # type: ignore
+
                         tm = telemetry_pb2.Telemetry()
                         tm.ParseFromString(decoded_bytes)
                         decoded["payload_decoded"] = MessageToDict(
@@ -153,6 +164,7 @@ def decode_payload(payload: bytes) -> Dict[str, Any]:
                 elif "paxcounter" in portnum:
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
+
                         pax = mesh_pb2.Paxcounter()
                         pax.ParseFromString(decoded_bytes)
                         decoded["payload_decoded"] = MessageToDict(
@@ -165,6 +177,7 @@ def decode_payload(payload: bytes) -> Dict[str, Any]:
                 elif "routing" in portnum:
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
+
                         rt = mesh_pb2.Routing()
                         rt.ParseFromString(decoded_bytes)
                         decoded["payload_decoded"] = MessageToDict(
@@ -177,6 +190,7 @@ def decode_payload(payload: bytes) -> Dict[str, Any]:
                 elif "admin" in portnum:
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
+
                         adm = mesh_pb2.AdminMessage()
                         adm.ParseFromString(decoded_bytes)
                         decoded["payload_decoded"] = MessageToDict(
@@ -222,12 +236,19 @@ async def run(cfg: Dict[str, Any]) -> None:
         identifier=cfg.get("client_id") or None,
     ) as client:
         await client.subscribe(cfg["topic"], qos=int(cfg["qos"]))
-        print(f"Subscribed to {cfg['topic']} on {cfg['host']}:{cfg['port']}", file=sys.stderr)
+        print(
+            f"Subscribed to {cfg['topic']} on {cfg['host']}:{cfg['port']}",
+            file=sys.stderr,
+        )
 
         async for msg in client.messages:
             try:
                 decoded = decode_payload(msg.payload)
-                print(_to_json(decoded, pretty=bool(cfg["pretty"]), color=bool(cfg["color"])))
+                print(
+                    _to_json(
+                        decoded, pretty=bool(cfg["pretty"]), color=bool(cfg["color"])
+                    )
+                )
             except Exception as e:
                 print(f"[decode-error] topic={msg.topic} err={e}", file=sys.stderr)
 

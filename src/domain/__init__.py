@@ -3,4 +3,3 @@
 from .message import MeshtasticMessage
 
 __all__ = ["MeshtasticMessage"]
-

@@ -28,15 +28,32 @@ mqtt_proxy_targets:
     client_id: ""  # Оставьте пустым для автоматической генерации
     enabled: true  # Включить/выключить этот прокси
     qos: 1  # QoS уровень публикации (0, 1 или 2)
+    tls: false  # Использовать TLS/SSL (обычно true для порта 8883)
+    tls_insecure: false  # Отключить проверку сертификата (только для самоподписанных)
   
-  # Пример второго прокси-брокера:
+  # Пример второго прокси-брокера с TLS:
   # - name: external_broker_2
-  #   host: another.mqtt.broker.com
-  #   port: 1883
+  #   host: secure.mqtt.broker.com
+  #   port: 8883  # Стандартный порт для MQTT over TLS
   #   username: user2
   #   password: pass2
   #   topic_prefix: meshtastic/
   #   client_id: meshtastic-proxy-2
   #   enabled: true
   #   qos: 1
+  #   tls: true  # Включить TLS для порта 8883
+  #   tls_insecure: false  # Проверять сертификат (рекомендуется)
+  
+  # Пример с самоподписанным сертификатом:
+  # - name: internal_broker
+  #   host: internal.mqtt.local
+  #   port: 8883
+  #   username: ""
+  #   password: ""
+  #   topic_prefix: ""
+  #   client_id: ""
+  #   enabled: true
+  #   qos: 1
+  #   tls: true
+  #   tls_insecure: true  # Отключить проверку для самоподписанного сертификата
 

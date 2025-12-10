@@ -1,9 +1,9 @@
 """
 Сервис обработки сообщений.
 
-Отвечает за парсинг и обработку сообщений от Meshtastic.
-Поддерживает UTF-8 для корректной обработки названий нод, тегов и текста сообщений.
+Парсит сообщения от Meshtastic (JSON и Protobuf) и создает доменные модели.
 """
+
 import base64
 import json
 import logging
@@ -12,6 +12,7 @@ from typing import Dict, Any, Optional
 try:
     from google.protobuf.json_format import MessageToDict  # type: ignore
     from meshtastic.protobuf import mqtt_pb2  # type: ignore
+
     PROTOBUF_AVAILABLE = True
 except Exception:  # noqa: BLE001
     PROTOBUF_AVAILABLE = False
@@ -30,9 +31,18 @@ class BaseParser:
         self,
         raw_payload: Dict[str, Any],
         topic: str,
+        raw_payload_bytes: Optional[bytes] = None,
     ) -> MeshtasticMessage:
         """
-        Общая логика построения MeshtasticMessage и обновления кэша.
+        Создает MeshtasticMessage из распарсенных данных и обновляет кэш нод.
+
+        Args:
+            raw_payload: Распарсенные данные сообщения
+            topic: MQTT топик сообщения
+            raw_payload_bytes: Исходный payload в байтах (для проксирования)
+
+        Returns:
+            Созданный объект MeshtasticMessage
         """
         message_type = raw_payload.get("type")
         message_id = raw_payload.get("id")
@@ -45,7 +55,11 @@ class BaseParser:
 
         text = None
         if message_type == "text":
-            text = raw_payload.get("payload", {}).get("text") if isinstance(raw_payload.get("payload"), dict) else None
+            text = (
+                raw_payload.get("payload", {}).get("text")
+                if isinstance(raw_payload.get("payload"), dict)
+                else None
+            )
             if not text:
                 text = raw_payload.get("text")
 
@@ -53,7 +67,11 @@ class BaseParser:
         from_node_str = None
         if from_node:
             if isinstance(from_node, (int, str)):
-                from_node_str = f"!{hex(int(from_node))[2:]}" if isinstance(from_node, int) else str(from_node)
+                from_node_str = (
+                    f"!{hex(int(from_node))[2:]}"
+                    if isinstance(from_node, int)
+                    else str(from_node)
+                )
             else:
                 from_node_str = str(from_node)
 
@@ -71,7 +89,7 @@ class BaseParser:
                         node_id=node_id_from_payload,
                         longname=from_node_name,
                         shortname=from_node_short,
-                        force=False
+                        force=False,
                     )
         elif message_type == "position":
             payload_data = raw_payload.get("payload", {})
@@ -80,7 +98,11 @@ class BaseParser:
                 from_node_raw = raw_payload.get("from")
                 if from_node_raw:
                     if isinstance(from_node_raw, (int, str)):
-                        node_id = f"!{hex(int(from_node_raw))[2:]}" if isinstance(from_node_raw, int) else str(from_node_raw)
+                        node_id = (
+                            f"!{hex(int(from_node_raw))[2:]}"
+                            if isinstance(from_node_raw, int)
+                            else str(from_node_raw)
+                        )
                 if node_id:
                     latitude_i = payload_data.get("latitude_i")
                     longitude_i = payload_data.get("longitude_i")
@@ -88,7 +110,8 @@ class BaseParser:
                     if latitude_i is not None and longitude_i is not None:
                         latitude_raw = float(latitude_i)
                         longitude_raw = float(longitude_i)
-                        if abs(latitude_raw) > 1000 or abs(longitude_raw) > 1000:
+                        if abs(latitude_raw) > 1000 or abs(
+                                longitude_raw) > 1000:
                             latitude = latitude_raw / 1e7
                             longitude = longitude_raw / 1e7
                         else:
@@ -96,24 +119,28 @@ class BaseParser:
                             longitude = longitude_raw
                         logger.info(
                             f"Получены координаты ноды: {node_id} "
-                            f"({latitude:.6f}, {longitude:.6f}, altitude={altitude})"
-                        )
+                            f"({latitude:.6f}, {longitude:.6f}, altitude={altitude})")
                         self.node_cache_service.update_node_position(
                             node_id=node_id,
                             latitude=latitude,
                             longitude=longitude,
                             altitude=altitude,
-                            force_disk_update=False
+                            force_disk_update=False,
                         )
                     else:
-                        logger.warning(f"Получено сообщение position без координат для ноды: {node_id}")
+                        logger.warning(
+                            f"Получено сообщение position без координат для ноды: {node_id}"
+                        )
                 else:
-                    logger.warning("Получено сообщение position без ID ноды (sender/from отсутствует)")
+                    logger.warning(
+                        "Получено сообщение position без ID ноды (sender/from отсутствует)"
+                    )
 
         # Кэширование отправителя
         if message_type != "nodeinfo" and self.node_cache_service and from_node_str:
             cached_name = self.node_cache_service.get_node_name(from_node_str)
-            cached_short = self.node_cache_service.get_node_shortname(from_node_str)
+            cached_short = self.node_cache_service.get_node_shortname(
+                from_node_str)
             if cached_name:
                 from_node_name = cached_name
             if cached_short:
@@ -125,14 +152,20 @@ class BaseParser:
         to_node_str = None
         if to_node is not None:
             if isinstance(to_node, (int, str)):
-                to_node_str = f"!{hex(int(to_node))[2:]}" if isinstance(to_node, int) else str(to_node)
+                to_node_str = (
+                    f"!{hex(int(to_node))[2:]}"
+                    if isinstance(to_node, int)
+                    else str(to_node)
+                )
             else:
                 to_node_str = str(to_node)
             if to_node == 4294967295 or to_node_str == "!ffffffff":
                 to_node_str = "Всем"
             elif self.node_cache_service:
-                to_node_name = self.node_cache_service.get_node_name(to_node_str)
-                to_node_short = self.node_cache_service.get_node_shortname(to_node_str)
+                to_node_name = self.node_cache_service.get_node_name(
+                    to_node_str)
+                to_node_short = self.node_cache_service.get_node_shortname(
+                    to_node_str)
 
         rssi = raw_payload.get("rssi")
         snr = raw_payload.get("snr")
@@ -165,6 +198,7 @@ class BaseParser:
         message = MeshtasticMessage(
             topic=topic,
             raw_payload=raw_payload,
+            raw_payload_bytes=raw_payload_bytes,
             message_id=str(message_id) if message_id else None,
             from_node=from_node_str,
             from_node_name=from_node_name,
@@ -189,16 +223,35 @@ class BaseParser:
 
 
 class JsonMessageParser(BaseParser):
+    """Парсит JSON сообщения от Meshtastic."""
+
     def parse(self, topic: str, payload: bytes) -> MeshtasticMessage:
+        """
+        Парсит JSON payload и создает MeshtasticMessage.
+
+        Args:
+            topic: MQTT топик сообщения
+            payload: Данные сообщения в байтах
+
+        Returns:
+            Созданный объект MeshtasticMessage
+        """
         payload_str = payload.decode("utf-8", errors="replace")
         raw_payload: Dict[str, Any] = json.loads(payload_str)
-        return self._common_enrich(raw_payload, topic)
+        # Сохраняем исходные bytes для проксирования
+        return self._common_enrich(
+            raw_payload, topic, raw_payload_bytes=payload)
 
 
 class ProtobufMessageParser(BaseParser):
+    """Парсит Protobuf сообщения от Meshtastic."""
+
     def parse(self, topic: str, payload: bytes) -> MeshtasticMessage:
+        """Парсит Protobuf payload и создает MeshtasticMessage."""
         raw_payload = self._parse_protobuf_payload(payload)
-        return self._common_enrich(raw_payload, topic)
+        # Сохраняем исходные bytes для проксирования
+        return self._common_enrich(
+            raw_payload, topic, raw_payload_bytes=payload)
 
     def _parse_protobuf_payload(self, payload: bytes) -> Dict[str, Any]:
         if not PROTOBUF_AVAILABLE:
@@ -214,7 +267,12 @@ class ProtobufMessageParser(BaseParser):
             preserving_proto_field_name=True,
         )
 
-        packet = envelope_dict.get("packet", {}) if isinstance(envelope_dict, dict) else {}
+        packet = (
+            envelope_dict.get(
+                "packet",
+                {}) if isinstance(
+                envelope_dict,
+                dict) else {})
         decoded = packet.get("decoded", {}) if isinstance(packet, dict) else {}
 
         raw_payload: Dict[str, Any] = {
@@ -263,7 +321,10 @@ class ProtobufMessageParser(BaseParser):
         if payload_b64:
             try:
                 decoded_bytes = base64.b64decode(payload_b64)
-                raw_payload["payload"] = {"raw_base64": payload_b64, "raw_hex": decoded_bytes.hex()}
+                raw_payload["payload"] = {
+                    "raw_base64": payload_b64,
+                    "raw_hex": decoded_bytes.hex(),
+                }
 
                 if raw_payload["type"] == "text":
                     text = decoded_bytes.decode("utf-8", errors="replace")
@@ -272,8 +333,11 @@ class ProtobufMessageParser(BaseParser):
                 elif raw_payload["type"] == "text_compressed":
                     try:
                         import unishox2_py  # type: ignore
+
                         decompressed = unishox2_py.decompress(decoded_bytes)
-                        raw_payload["payload"]["text"] = decompressed.decode("utf-8", errors="replace")
+                        raw_payload["payload"]["text"] = decompressed.decode(
+                            "utf-8", errors="replace"
+                        )
                         raw_payload["payload"]["unishox"] = True
                     except Exception as e:
                         raw_payload["payload"]["unishox_error"] = str(e)
@@ -281,79 +345,107 @@ class ProtobufMessageParser(BaseParser):
                 elif raw_payload["type"] == "nodeinfo":
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
+
                         user_msg = mesh_pb2.User()
                         user_msg.ParseFromString(decoded_bytes)
                         raw_payload["payload"] = MessageToDict(
                             user_msg, preserving_proto_field_name=True
                         )
                     except Exception as e:
-                        raw_payload["payload"] = {"raw_base64": payload_b64, "decode_error": str(e)}
+                        raw_payload["payload"] = {
+                            "raw_base64": payload_b64,
+                            "decode_error": str(e),
+                        }
 
                 elif raw_payload["type"] == "position":
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
+
                         pos = mesh_pb2.Position()
                         pos.ParseFromString(decoded_bytes)
                         raw_payload["payload"] = MessageToDict(
                             pos, preserving_proto_field_name=True
                         )
                     except Exception as e:
-                        raw_payload["payload"] = {"raw_base64": payload_b64, "decode_error": str(e)}
+                        raw_payload["payload"] = {
+                            "raw_base64": payload_b64,
+                            "decode_error": str(e),
+                        }
 
                 elif raw_payload["type"] == "telemetry":
                     try:
                         from meshtastic.protobuf import telemetry_pb2  # type: ignore
+
                         tm = telemetry_pb2.Telemetry()
                         tm.ParseFromString(decoded_bytes)
                         raw_payload["payload"] = MessageToDict(
                             tm, preserving_proto_field_name=True
                         )
                     except Exception as e:
-                        raw_payload["payload"] = {"raw_base64": payload_b64, "decode_error": str(e)}
+                        raw_payload["payload"] = {
+                            "raw_base64": payload_b64,
+                            "decode_error": str(e),
+                        }
 
                 elif raw_payload["type"] == "routing":
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
+
                         rt = mesh_pb2.Routing()
                         rt.ParseFromString(decoded_bytes)
                         raw_payload["payload"] = MessageToDict(
                             rt, preserving_proto_field_name=True
                         )
                     except Exception as e:
-                        raw_payload["payload"] = {"raw_base64": payload_b64, "decode_error": str(e)}
+                        raw_payload["payload"] = {
+                            "raw_base64": payload_b64,
+                            "decode_error": str(e),
+                        }
 
                 elif raw_payload["type"] == "admin":
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
+
                         adm = mesh_pb2.AdminMessage()
                         adm.ParseFromString(decoded_bytes)
                         raw_payload["payload"] = MessageToDict(
                             adm, preserving_proto_field_name=True
                         )
                     except Exception as e:
-                        raw_payload["payload"] = {"raw_base64": payload_b64, "decode_error": str(e)}
+                        raw_payload["payload"] = {
+                            "raw_base64": payload_b64,
+                            "decode_error": str(e),
+                        }
 
                 elif raw_payload["type"] == "paxcounter":
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
+
                         pax = mesh_pb2.Paxcounter()
                         pax.ParseFromString(decoded_bytes)
                         raw_payload["payload"] = MessageToDict(
                             pax, preserving_proto_field_name=True
                         )
                     except Exception as e:
-                        raw_payload["payload"] = {"raw_base64": payload_b64, "decode_error": str(e)}
+                        raw_payload["payload"] = {
+                            "raw_base64": payload_b64,
+                            "decode_error": str(e),
+                        }
 
                 elif raw_payload["type"] == "waypoint":
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
+
                         wp = mesh_pb2.Waypoint()
                         wp.ParseFromString(decoded_bytes)
                         raw_payload["payload"] = MessageToDict(
                             wp, preserving_proto_field_name=True
                         )
                     except Exception as e:
-                        raw_payload["payload"] = {"raw_base64": payload_b64, "decode_error": str(e)}
+                        raw_payload["payload"] = {
+                            "raw_base64": payload_b64,
+                            "decode_error": str(e),
+                        }
 
             except Exception:
                 raw_payload["payload"] = {"raw_base64": payload_b64}
@@ -362,22 +454,51 @@ class ProtobufMessageParser(BaseParser):
 
 
 class MessageService:
-    """
-    Сервис для обработки сообщений от Meshtastic.
-    
-    Парсит payload (JSON или protobuf) из MQTT и создает доменные модели сообщений.
-    """
-    
-    def __init__(self, node_cache_service: Optional[Any] = None, payload_format: str = "json"):
+    """Парсит сообщения от Meshtastic (JSON или Protobuf) и создает доменные модели."""
+
+    def __init__(
+            self,
+            node_cache_service: Optional[Any] = None,
+            payload_format: str = "json"):
+        """
+        Создает парсеры для JSON и Protobuf сообщений.
+
+        Args:
+            node_cache_service: Сервис кэширования нод (опционально)
+            payload_format: Формат payload ("json", "protobuf" или "both")
+        """
         self.node_cache_service = node_cache_service
         self.payload_format = payload_format.lower() if payload_format else "json"
-        self.json_parser = JsonMessageParser(node_cache_service=node_cache_service)
-        self.protobuf_parser = ProtobufMessageParser(node_cache_service=node_cache_service)
-    
-    def parse_mqtt_message(self, topic: str, payload: bytes) -> MeshtasticMessage:
+        self.json_parser = JsonMessageParser(
+            node_cache_service=node_cache_service)
+        self.protobuf_parser = ProtobufMessageParser(
+            node_cache_service=node_cache_service
+        )
+
+    def parse_mqtt_message(
+            self,
+            topic: str,
+            payload: bytes) -> MeshtasticMessage:
+        """
+        Парсит MQTT сообщение в зависимости от формата и топика.
+
+        Args:
+            topic: MQTT топик сообщения
+            payload: Данные сообщения в байтах
+
+        Returns:
+            Созданный объект MeshtasticMessage
+
+        Raises:
+            ValueError: Если сообщение не соответствует выбранному формату
+        """
         is_protobuf_topic = "/e/" in topic and "/json/" not in topic
-        should_parse_protobuf = self.payload_format in ("protobuf", "both") and is_protobuf_topic
-        should_parse_json = self.payload_format in ("json", "both") and not is_protobuf_topic
+        should_parse_protobuf = (
+            self.payload_format in ("protobuf", "both") and is_protobuf_topic
+        )
+        should_parse_json = (
+            self.payload_format in ("json", "both") and not is_protobuf_topic
+        )
 
         try:
             if should_parse_protobuf:
@@ -390,7 +511,7 @@ class MessageService:
         except json.JSONDecodeError as e:
             logger.error(
                 f"Ошибка парсинга JSON из MQTT сообщения: topic={topic}, error={e}",
-                exc_info=True
+                exc_info=True,
             )
             try:
                 raw_str = payload.decode("utf-8", errors="replace")
@@ -399,6 +520,7 @@ class MessageService:
             return MeshtasticMessage(
                 topic=topic,
                 raw_payload={"error": "Failed to parse JSON", "raw": raw_str},
+                raw_payload_bytes=payload,
             )
         except UnicodeDecodeError as e:
             logger.warning(
@@ -406,12 +528,14 @@ class MessageService:
             )
             return MeshtasticMessage(
                 topic=topic,
-                raw_payload={"error": "Binary payload (protobuf) - use JSON topic instead"},
+                raw_payload={
+                    "error": "Binary payload (protobuf) - use JSON topic instead"},
+                raw_payload_bytes=payload,
             )
         except Exception as e:
             logger.error(
                 f"Неожиданная ошибка при парсинге MQTT сообщения: topic={topic}, error={e}",
-                exc_info=True
+                exc_info=True,
             )
             try:
                 raw_str = payload.decode("utf-8", errors="ignore")
@@ -420,6 +544,7 @@ class MessageService:
             return MeshtasticMessage(
                 topic=topic,
                 raw_payload={"error": str(e), "raw": raw_str},
+                raw_payload_bytes=payload,
             )
 
     def _parse_protobuf_payload(self, payload: bytes) -> Dict[str, Any]:
@@ -440,7 +565,12 @@ class MessageService:
             preserving_proto_field_name=True,
         )
 
-        packet = envelope_dict.get("packet", {}) if isinstance(envelope_dict, dict) else {}
+        packet = (
+            envelope_dict.get(
+                "packet",
+                {}) if isinstance(
+                envelope_dict,
+                dict) else {})
         decoded = packet.get("decoded", {}) if isinstance(packet, dict) else {}
 
         raw_payload: Dict[str, Any] = {
@@ -489,7 +619,10 @@ class MessageService:
         if payload_b64:
             try:
                 decoded_bytes = base64.b64decode(payload_b64)
-                raw_payload["payload"] = {"raw_base64": payload_b64, "raw_hex": decoded_bytes.hex()}
+                raw_payload["payload"] = {
+                    "raw_base64": payload_b64,
+                    "raw_hex": decoded_bytes.hex(),
+                }
 
                 if raw_payload["type"] == "text":
                     text = decoded_bytes.decode("utf-8", errors="replace")
@@ -498,8 +631,11 @@ class MessageService:
                 elif raw_payload["type"] == "text_compressed":
                     try:
                         import unishox2_py  # type: ignore
+
                         decompressed = unishox2_py.decompress(decoded_bytes)
-                        raw_payload["payload"]["text"] = decompressed.decode("utf-8", errors="replace")
+                        raw_payload["payload"]["text"] = decompressed.decode(
+                            "utf-8", errors="replace"
+                        )
                         raw_payload["payload"]["unishox"] = True
                     except Exception as e:
                         raw_payload["payload"]["unishox_error"] = str(e)
@@ -507,82 +643,109 @@ class MessageService:
                 elif raw_payload["type"] == "nodeinfo":
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
+
                         user_msg = mesh_pb2.User()
                         user_msg.ParseFromString(decoded_bytes)
                         raw_payload["payload"] = MessageToDict(
                             user_msg, preserving_proto_field_name=True
                         )
                     except Exception as e:
-                        raw_payload["payload"] = {"raw_base64": payload_b64, "decode_error": str(e)}
+                        raw_payload["payload"] = {
+                            "raw_base64": payload_b64,
+                            "decode_error": str(e),
+                        }
 
                 elif raw_payload["type"] == "position":
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
+
                         pos = mesh_pb2.Position()
                         pos.ParseFromString(decoded_bytes)
                         raw_payload["payload"] = MessageToDict(
                             pos, preserving_proto_field_name=True
                         )
                     except Exception as e:
-                        raw_payload["payload"] = {"raw_base64": payload_b64, "decode_error": str(e)}
+                        raw_payload["payload"] = {
+                            "raw_base64": payload_b64,
+                            "decode_error": str(e),
+                        }
 
                 elif raw_payload["type"] == "telemetry":
                     try:
                         from meshtastic.protobuf import telemetry_pb2  # type: ignore
+
                         tm = telemetry_pb2.Telemetry()
                         tm.ParseFromString(decoded_bytes)
                         raw_payload["payload"] = MessageToDict(
                             tm, preserving_proto_field_name=True
                         )
                     except Exception as e:
-                        raw_payload["payload"] = {"raw_base64": payload_b64, "decode_error": str(e)}
+                        raw_payload["payload"] = {
+                            "raw_base64": payload_b64,
+                            "decode_error": str(e),
+                        }
 
                 elif raw_payload["type"] == "routing":
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
+
                         rt = mesh_pb2.Routing()
                         rt.ParseFromString(decoded_bytes)
                         raw_payload["payload"] = MessageToDict(
                             rt, preserving_proto_field_name=True
                         )
                     except Exception as e:
-                        raw_payload["payload"] = {"raw_base64": payload_b64, "decode_error": str(e)}
+                        raw_payload["payload"] = {
+                            "raw_base64": payload_b64,
+                            "decode_error": str(e),
+                        }
 
                 elif raw_payload["type"] == "admin":
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
+
                         adm = mesh_pb2.AdminMessage()
                         adm.ParseFromString(decoded_bytes)
                         raw_payload["payload"] = MessageToDict(
                             adm, preserving_proto_field_name=True
                         )
                     except Exception as e:
-                        raw_payload["payload"] = {"raw_base64": payload_b64, "decode_error": str(e)}
+                        raw_payload["payload"] = {
+                            "raw_base64": payload_b64,
+                            "decode_error": str(e),
+                        }
 
                 elif raw_payload["type"] == "paxcounter":
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
+
                         pax = mesh_pb2.Paxcounter()
                         pax.ParseFromString(decoded_bytes)
                         raw_payload["payload"] = MessageToDict(
                             pax, preserving_proto_field_name=True
                         )
                     except Exception as e:
-                        raw_payload["payload"] = {"raw_base64": payload_b64, "decode_error": str(e)}
+                        raw_payload["payload"] = {
+                            "raw_base64": payload_b64,
+                            "decode_error": str(e),
+                        }
 
                 elif raw_payload["type"] == "waypoint":
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
+
                         wp = mesh_pb2.Waypoint()
                         wp.ParseFromString(decoded_bytes)
                         raw_payload["payload"] = MessageToDict(
                             wp, preserving_proto_field_name=True
                         )
                     except Exception as e:
-                        raw_payload["payload"] = {"raw_base64": payload_b64, "decode_error": str(e)}
+                        raw_payload["payload"] = {
+                            "raw_base64": payload_b64,
+                            "decode_error": str(e),
+                        }
 
             except Exception:
                 raw_payload["payload"] = {"raw_base64": payload_b64}
 
         return raw_payload
-
