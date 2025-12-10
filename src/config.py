@@ -52,9 +52,7 @@ def setup_logging(
 
 def setup_basic_logging() -> None:
     """Базовое логирование для отображения ошибок до загрузки полной конфигурации."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(levelname)s: %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 
 class MQTTBrokerConfig(BaseSettings):
@@ -64,18 +62,13 @@ class MQTTBrokerConfig(BaseSettings):
 
     host: str = Field(default="localhost", description="Хост MQTT брокера")
     port: int = Field(default=1883, description="Порт MQTT брокера")
-    username: Optional[str] = Field(
-        default=None, description="Имя пользователя")
+    username: Optional[str] = Field(default=None, description="Имя пользователя")
     password: Optional[str] = Field(default=None, description="Пароль")
-    topic: str = Field(
-        default="msh/2/json/#",
-        description="Топик для подписки")
+    topic: str = Field(default="msh/2/json/#", description="Топик для подписки")
     client_id: str = Field(
         default="meshtastic-telegram-bot", description="MQTT client ID"
     )
-    keepalive: int = Field(
-        default=60,
-        description="Keepalive интервал в секундах")
+    keepalive: int = Field(default=60, description="Keepalive интервал в секундах")
     qos: int = Field(default=1, description="QoS уровень подписки")
     payload_format: str = Field(
         default="json",
@@ -109,8 +102,7 @@ class MQTTProxyTargetConfig(BaseSettings):
     name: str = Field(description="Имя прокси-цели (для логирования)")
     host: str = Field(description="Хост целевого MQTT брокера")
     port: int = Field(default=1883, description="Порт целевого MQTT брокера")
-    username: Optional[str] = Field(
-        default=None, description="Имя пользователя")
+    username: Optional[str] = Field(default=None, description="Имя пользователя")
     password: Optional[str] = Field(default=None, description="Пароль")
     topic_prefix: Optional[str] = Field(
         default=None, description="Префикс для топика (если нужен)"
@@ -121,8 +113,8 @@ class MQTTProxyTargetConfig(BaseSettings):
     enabled: bool = Field(default=True, description="Включен ли этот прокси")
     qos: int = Field(default=1, description="QoS уровень публикации")
     tls: bool = Field(
-        default=False,
-        description="Использовать TLS/SSL соединение (для порта 8883)")
+        default=False, description="Использовать TLS/SSL соединение (для порта 8883)"
+    )
     tls_insecure: bool = Field(
         default=False,
         description="Отключить проверку сертификата (только для самоподписанных сертификатов)",
@@ -143,8 +135,7 @@ class TelegramConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="TELEGRAM_")
 
     bot_token: str = Field(description="Токен Telegram бота")
-    group_chat_id: Optional[int] = Field(
-        default=None, description="ID группового чата")
+    group_chat_id: Optional[int] = Field(default=None, description="ID группового чата")
     group_topic_id: Optional[int] = Field(
         default=None,
         description="ID темы в группе (message_thread_id). Используется для форумов. Если не указан - отправляется в общий чат.",
@@ -220,8 +211,7 @@ class TelegramConfig(BaseSettings):
 
     @field_validator("allowed_user_ids", mode="before")
     @classmethod
-    def parse_allowed_user_ids(
-            cls, v: str | List[int] | None) -> List[int] | None:
+    def parse_allowed_user_ids(cls, v: str | List[int] | None) -> List[int] | None:
         """
         Парсит список разрешенных user_id из строки или списка.
 
@@ -246,8 +236,7 @@ class TelegramConfig(BaseSettings):
                 return None
 
             try:
-                return [int(uid.strip())
-                        for uid in v.split(",") if uid.strip()]
+                return [int(uid.strip()) for uid in v.split(",") if uid.strip()]
             except ValueError:
                 raise ValueError(f"Некорректный формат allowed_user_ids: {v}")
 
@@ -277,12 +266,12 @@ class AppConfig(BaseSettings):
     # По умолчанию загружается одна цель из переменных окружения с префиксом MQTT_PROXY_TARGET_
     # Для множественных целей используйте метод load_proxy_targets_from_env()
     mqtt_proxy_targets: List[MQTTProxyTargetConfig] = Field(
-        default_factory=list, description="Список целевых MQTT серверов для прокси")
+        default_factory=list, description="Список целевых MQTT серверов для прокси"
+    )
 
     # Логирование
     log_level: str = Field(default="INFO", description="Уровень логирования")
-    log_format: str = Field(default="json",
-                            description="Формат логов: json или text")
+    log_format: str = Field(default="json", description="Формат логов: json или text")
 
     @classmethod
     def load_from_yaml(cls, yaml_path: Optional[str] = None) -> "AppConfig":
@@ -350,8 +339,7 @@ class AppConfig(BaseSettings):
                     for target_data in proxy_targets_data:
                         try:
                             # Создаем конфигурацию прокси-цели
-                            target_config = MQTTProxyTargetConfig(
-                                **target_data)
+                            target_config = MQTTProxyTargetConfig(**target_data)
                             if target_config.enabled:
                                 proxy_targets.append(target_config)
                         except Exception as e:
@@ -389,8 +377,9 @@ class AppConfig(BaseSettings):
             return self
 
         # Проверяем, есть ли переменные с префиксом MQTT_PROXY_TARGET_
-        env_vars = {k: v for k, v in os.environ.items(
-        ) if k.startswith("MQTT_PROXY_TARGET_")}
+        env_vars = {
+            k: v for k, v in os.environ.items() if k.startswith("MQTT_PROXY_TARGET_")
+        }
 
         if not env_vars:
             return self

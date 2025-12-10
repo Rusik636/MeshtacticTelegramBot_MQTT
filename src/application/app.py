@@ -85,13 +85,13 @@ class MeshtasticTelegramBotApp:
             loop = asyncio.get_event_loop()
             if hasattr(signal, "SIGTERM"):
                 loop.add_signal_handler(
-                    signal.SIGTERM, lambda: asyncio.create_task(
-                        self._handle_shutdown(
-                            signal.SIGTERM)), )
+                    signal.SIGTERM,
+                    lambda: asyncio.create_task(self._handle_shutdown(signal.SIGTERM)),
+                )
             loop.add_signal_handler(
-                signal.SIGINT, lambda: asyncio.create_task(
-                    self._handle_shutdown(
-                        signal.SIGINT)), )
+                signal.SIGINT,
+                lambda: asyncio.create_task(self._handle_shutdown(signal.SIGINT)),
+            )
         except (NotImplementedError, ValueError):
             # На Windows может не работать
             logger.warning(
@@ -121,8 +121,8 @@ class MeshtasticTelegramBotApp:
 
         except Exception as e:
             logger.error(
-                f"Критическая ошибка при запуске приложения: {e}",
-                exc_info=True)
+                f"Критическая ошибка при запуске приложения: {e}", exc_info=True
+            )
             raise
         finally:
             await self.stop()
@@ -157,9 +157,7 @@ class MeshtasticTelegramBotApp:
 
             logger.info("Приложение остановлено")
         except Exception as e:
-            logger.error(
-                f"Ошибка при остановке приложения: {e}",
-                exc_info=True)
+            logger.error(f"Ошибка при остановке приложения: {e}", exc_info=True)
 
         if self._shutdown_event:
             self._shutdown_event.set()

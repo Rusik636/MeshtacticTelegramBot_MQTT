@@ -110,8 +110,7 @@ class BaseParser:
                     if latitude_i is not None and longitude_i is not None:
                         latitude_raw = float(latitude_i)
                         longitude_raw = float(longitude_i)
-                        if abs(latitude_raw) > 1000 or abs(
-                                longitude_raw) > 1000:
+                        if abs(latitude_raw) > 1000 or abs(longitude_raw) > 1000:
                             latitude = latitude_raw / 1e7
                             longitude = longitude_raw / 1e7
                         else:
@@ -119,7 +118,8 @@ class BaseParser:
                             longitude = longitude_raw
                         logger.info(
                             f"Получены координаты ноды: {node_id} "
-                            f"({latitude:.6f}, {longitude:.6f}, altitude={altitude})")
+                            f"({latitude:.6f}, {longitude:.6f}, altitude={altitude})"
+                        )
                         self.node_cache_service.update_node_position(
                             node_id=node_id,
                             latitude=latitude,
@@ -139,8 +139,7 @@ class BaseParser:
         # Кэширование отправителя
         if message_type != "nodeinfo" and self.node_cache_service and from_node_str:
             cached_name = self.node_cache_service.get_node_name(from_node_str)
-            cached_short = self.node_cache_service.get_node_shortname(
-                from_node_str)
+            cached_short = self.node_cache_service.get_node_shortname(from_node_str)
             if cached_name:
                 from_node_name = cached_name
             if cached_short:
@@ -162,10 +161,8 @@ class BaseParser:
             if to_node == 4294967295 or to_node_str == "!ffffffff":
                 to_node_str = "Всем"
             elif self.node_cache_service:
-                to_node_name = self.node_cache_service.get_node_name(
-                    to_node_str)
-                to_node_short = self.node_cache_service.get_node_shortname(
-                    to_node_str)
+                to_node_name = self.node_cache_service.get_node_name(to_node_str)
+                to_node_short = self.node_cache_service.get_node_shortname(to_node_str)
 
         rssi = raw_payload.get("rssi")
         snr = raw_payload.get("snr")
@@ -239,8 +236,7 @@ class JsonMessageParser(BaseParser):
         payload_str = payload.decode("utf-8", errors="replace")
         raw_payload: Dict[str, Any] = json.loads(payload_str)
         # Сохраняем исходные bytes для проксирования
-        return self._common_enrich(
-            raw_payload, topic, raw_payload_bytes=payload)
+        return self._common_enrich(raw_payload, topic, raw_payload_bytes=payload)
 
 
 class ProtobufMessageParser(BaseParser):
@@ -250,8 +246,7 @@ class ProtobufMessageParser(BaseParser):
         """Парсит Protobuf payload и создает MeshtasticMessage."""
         raw_payload = self._parse_protobuf_payload(payload)
         # Сохраняем исходные bytes для проксирования
-        return self._common_enrich(
-            raw_payload, topic, raw_payload_bytes=payload)
+        return self._common_enrich(raw_payload, topic, raw_payload_bytes=payload)
 
     def _parse_protobuf_payload(self, payload: bytes) -> Dict[str, Any]:
         if not PROTOBUF_AVAILABLE:
@@ -268,11 +263,8 @@ class ProtobufMessageParser(BaseParser):
         )
 
         packet = (
-            envelope_dict.get(
-                "packet",
-                {}) if isinstance(
-                envelope_dict,
-                dict) else {})
+            envelope_dict.get("packet", {}) if isinstance(envelope_dict, dict) else {}
+        )
         decoded = packet.get("decoded", {}) if isinstance(packet, dict) else {}
 
         raw_payload: Dict[str, Any] = {
@@ -457,9 +449,8 @@ class MessageService:
     """Парсит сообщения от Meshtastic (JSON или Protobuf) и создает доменные модели."""
 
     def __init__(
-            self,
-            node_cache_service: Optional[Any] = None,
-            payload_format: str = "json"):
+        self, node_cache_service: Optional[Any] = None, payload_format: str = "json"
+    ):
         """
         Создает парсеры для JSON и Protobuf сообщений.
 
@@ -469,16 +460,12 @@ class MessageService:
         """
         self.node_cache_service = node_cache_service
         self.payload_format = payload_format.lower() if payload_format else "json"
-        self.json_parser = JsonMessageParser(
-            node_cache_service=node_cache_service)
+        self.json_parser = JsonMessageParser(node_cache_service=node_cache_service)
         self.protobuf_parser = ProtobufMessageParser(
             node_cache_service=node_cache_service
         )
 
-    def parse_mqtt_message(
-            self,
-            topic: str,
-            payload: bytes) -> MeshtasticMessage:
+    def parse_mqtt_message(self, topic: str, payload: bytes) -> MeshtasticMessage:
         """
         Парсит MQTT сообщение в зависимости от формата и топика.
 
@@ -529,7 +516,8 @@ class MessageService:
             return MeshtasticMessage(
                 topic=topic,
                 raw_payload={
-                    "error": "Binary payload (protobuf) - use JSON topic instead"},
+                    "error": "Binary payload (protobuf) - use JSON topic instead"
+                },
                 raw_payload_bytes=payload,
             )
         except Exception as e:
@@ -566,11 +554,8 @@ class MessageService:
         )
 
         packet = (
-            envelope_dict.get(
-                "packet",
-                {}) if isinstance(
-                envelope_dict,
-                dict) else {})
+            envelope_dict.get("packet", {}) if isinstance(envelope_dict, dict) else {}
+        )
         decoded = packet.get("decoded", {}) if isinstance(packet, dict) else {}
 
         raw_payload: Dict[str, Any] = {

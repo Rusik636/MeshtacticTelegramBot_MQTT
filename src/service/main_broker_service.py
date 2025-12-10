@@ -40,8 +40,8 @@ class MainBrokerService:
             logger.info("Основной MQTT брокер подключен")
         except Exception as e:
             logger.error(
-                f"Ошибка подключения к основному MQTT брокеру: {e}",
-                exc_info=True)
+                f"Ошибка подключения к основному MQTT брокеру: {e}", exc_info=True
+            )
             raise
 
     async def stop(self) -> None:
@@ -55,8 +55,8 @@ class MainBrokerService:
             logger.info("Основной MQTT брокер отключен")
         except Exception as e:
             logger.error(
-                f"Ошибка отключения от основного MQTT брокера: {e}",
-                exc_info=True)
+                f"Ошибка отключения от основного MQTT брокера: {e}", exc_info=True
+            )
 
     async def subscribe(self, handler: MQTTMessageHandler) -> None:
         """

@@ -98,7 +98,8 @@ class TelegramCommandsHandler:
             )
             logger.warning(
                 f"Попытка использования бота неразрешенным пользователем: user_id={user_id}, "
-                f"username={message.from_user.username}")
+                f"username={message.from_user.username}"
+            )
             return False
 
         return True
@@ -122,7 +123,8 @@ class TelegramCommandsHandler:
 
         logger.info(
             f"Команда /help от пользователя: user_id={message.from_user.id}, "
-            f"username=@{message.from_user.username if message.from_user.username else 'N/A'}")
+            f"username=@{message.from_user.username if message.from_user.username else 'N/A'}"
+        )
         logger.info(
             "Доступные команды: /start, /help, /status, /info, /get_chat_id, /get_topic_id"
         )
@@ -242,8 +244,7 @@ class TelegramCommandsHandler:
             )
         else:
             chat_info_text = " | ".join(chat_info_parts)
-            logger.info(
-                f"Команда /get_chat_id от user_id={user_id}: {chat_info_text}")
+            logger.info(f"Команда /get_chat_id от user_id={user_id}: {chat_info_text}")
             if chat.type in ("group", "supergroup"):
                 logger.info(
                     f"Для настройки добавьте в .env: TELEGRAM_GROUP_CHAT_ID={chat.id}"
@@ -257,12 +258,11 @@ class TelegramCommandsHandler:
         user_id = message.from_user.id
 
         # Проверяем, отправлена ли команда из темы форума
-        if not hasattr(
-                message,
-                "message_thread_id") or not message.message_thread_id:
+        if not hasattr(message, "message_thread_id") or not message.message_thread_id:
             logger.warning(
                 f"Команда /get_topic_id от user_id={user_id} отправлена не из темы форума. "
-                f"chat_id={message.chat.id}, chat_type={message.chat.type}")
+                f"chat_id={message.chat.id}, chat_type={message.chat.type}"
+            )
             return
 
         topic_id = message.message_thread_id
@@ -297,7 +297,8 @@ class TelegramCommandsHandler:
         text_preview = message.text[:50] if message.text else None
         logger.debug(
             f"Обработано неизвестное сообщение: user_id={message.from_user.id}, "
-            f"text={text_preview}")
+            f"text={text_preview}"
+        )
 
     async def start_polling(self) -> None:
         """

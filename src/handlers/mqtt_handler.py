@@ -88,9 +88,7 @@ class ProxyMessageHandler(BaseMQTTMessageHandler):
                 f"Сообщение проксировано: topic={topic}, size={len(payload)} bytes"
             )
         except Exception as e:
-            logger.error(
-                f"Ошибка при проксировании сообщения: {e}",
-                exc_info=True)
+            logger.error(f"Ошибка при проксировании сообщения: {e}", exc_info=True)
 
 
 class MainBrokerMessageHandler(BaseMQTTMessageHandler):
@@ -113,8 +111,7 @@ class MainBrokerMessageHandler(BaseMQTTMessageHandler):
         self.telegram_repo = telegram_repo
         self.message_service = message_service
         self.notify_user_ids = notify_user_ids
-        self.payload_format = getattr(
-            message_service, "payload_format", "json")
+        self.payload_format = getattr(message_service, "payload_format", "json")
 
     async def _process_message(self, topic: str, payload: bytes) -> None:
         """

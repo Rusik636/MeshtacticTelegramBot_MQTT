@@ -33,7 +33,8 @@ async def main() -> None:
             logger.warning(
                 "Файл .env не найден. "
                 "Убедитесь, что переменные окружения заданы через env_file в docker-compose.yml "
-                "или через переменные окружения системы.")
+                "или через переменные окружения системы."
+            )
 
         # Загружаем конфигурацию (сначала из YAML, затем из .env для обратной
         # совместимости)
@@ -51,8 +52,7 @@ async def main() -> None:
         except Exception as e:
             error_msg = str(e)
             if "telegram" in error_msg.lower() or "bot_token" in error_msg.lower():
-                logger.error(
-                    f"Ошибка загрузки конфигурации Telegram: {error_msg}")
+                logger.error(f"Ошибка загрузки конфигурации Telegram: {error_msg}")
                 print("\n❌ ОШИБКА: Не задан TELEGRAM_BOT_TOKEN")
                 print("Убедитесь, что в файле .env задана переменная:")
                 print("TELEGRAM_BOT_TOKEN=your_bot_token_here")
@@ -74,9 +74,7 @@ async def main() -> None:
         logger.info("Получен сигнал прерывания")
         sys.exit(0)
     except Exception as e:
-        logger.error(
-            f"Критическая ошибка при запуске приложения: {e}",
-            exc_info=True)
+        logger.error(f"Критическая ошибка при запуске приложения: {e}", exc_info=True)
         sys.exit(1)
 
 

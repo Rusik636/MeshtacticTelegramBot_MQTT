@@ -123,8 +123,7 @@ class NodeCacheService:
                     node_info = NodeInfo.from_dict(node_data)
                     self._cache[node_info.node_id] = node_info
                 except (KeyError, ValueError) as e:
-                    logger.warning(
-                        f"Ошибка при загрузке информации о ноде: {e}")
+                    logger.warning(f"Ошибка при загрузке информации о ноде: {e}")
                     continue
 
             logger.info(f"Загружено {len(self._cache)} нод из кэша")
@@ -240,8 +239,7 @@ class NodeCacheService:
                 time_since_update = (
                     datetime.utcnow() - existing_node.last_position_updated
                 )
-                if time_since_update >= timedelta(
-                        days=self.update_interval_days):
+                if time_since_update >= timedelta(days=self.update_interval_days):
                     should_save_to_disk = True
             else:
                 # Если координат еще не было, сохраняем на диск
@@ -261,7 +259,8 @@ class NodeCacheService:
             if old_lat is not None and old_lon is not None:
                 logger.info(
                     f"Обновлены координаты ноды в кэше: {node_id} "
-                    f"({old_lat:.6f}, {old_lon:.6f}) → ({latitude:.6f}, {longitude:.6f})")
+                    f"({old_lat:.6f}, {old_lon:.6f}) → ({latitude:.6f}, {longitude:.6f})"
+                )
             else:
                 logger.info(
                     f"Добавлены координаты ноды в кэш: {node_id} ({latitude:.6f}, {longitude:.6f})"
@@ -308,10 +307,7 @@ class NodeCacheService:
         """
         node_info = self.get_node_info(node_id)
         if node_info and node_info.has_position():
-            return (
-                node_info.latitude,
-                node_info.longitude,
-                node_info.altitude)
+            return (node_info.latitude, node_info.longitude, node_info.altitude)
         return None
 
     def get_node_name(self, node_id: str) -> Optional[str]:

@@ -17,8 +17,7 @@ class MeshtasticMessage(BaseModel):
     """Модель сообщения от Meshtastic с распарсенными полями."""
 
     # Исходный топик MQTT
-    topic: str = Field(
-        description="MQTT топик, из которого получено сообщение")
+    topic: str = Field(description="MQTT топик, из которого получено сообщение")
 
     # Исходный payload (JSON) - распарсенные данные для внутренней обработки
     raw_payload: Dict[str, Any] = Field(
@@ -33,13 +32,12 @@ class MeshtasticMessage(BaseModel):
 
     # Время получения
     received_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        description="Время получения сообщения")
+        default_factory=datetime.utcnow, description="Время получения сообщения"
+    )
 
     # Извлеченные поля из Meshtastic JSON
     message_id: Optional[str] = Field(default=None, description="ID сообщения")
-    from_node: Optional[str] = Field(
-        default=None, description="ID отправителя")
+    from_node: Optional[str] = Field(default=None, description="ID отправителя")
     from_node_name: Optional[str] = Field(
         default=None, description="Название ноды отправителя"
     )
@@ -61,13 +59,14 @@ class MeshtasticMessage(BaseModel):
         default=None, description="Unix timestamp сообщения"
     )
     rssi: Optional[int] = Field(
-        default=None,
-        description="RSSI (Received Signal Strength Indicator) в dBm")
+        default=None, description="RSSI (Received Signal Strength Indicator) в dBm"
+    )
     snr: Optional[float] = Field(
         default=None, description="SNR (Signal-to-Noise Ratio) в dB"
     )
     message_type: Optional[str] = Field(
-        default=None, description="Тип сообщения (text, nodeinfo, position и т.д.)")
+        default=None, description="Тип сообщения (text, nodeinfo, position и т.д.)"
+    )
 
     @staticmethod
     def get_rssi_quality_emoji(rssi: Optional[int]) -> str:
@@ -187,8 +186,7 @@ class MeshtasticMessage(BaseModel):
             else:
                 # Получаем информацию о получателе из кэша, если доступен
                 if node_cache_service:
-                    cached_to_name = node_cache_service.get_node_name(
-                        self.to_node)
+                    cached_to_name = node_cache_service.get_node_name(self.to_node)
                     cached_to_short = node_cache_service.get_node_shortname(
                         self.to_node
                     )
@@ -234,15 +232,13 @@ class MeshtasticMessage(BaseModel):
 
         # Местоположение отправителя
         if node_cache_service and self.from_node:
-            sender_position = node_cache_service.get_node_position(
-                self.from_node)
+            sender_position = node_cache_service.get_node_position(self.from_node)
             if sender_position:
                 latitude, longitude, altitude = sender_position
                 yandex_map_url = (
                     f"https://yandex.ru/maps/?pt={longitude},{latitude}&z=15&l=map"
                 )
-                location_parts.append(
-                    f'📍 <a href="{yandex_map_url}">Отправитель</a>')
+                location_parts.append(f'📍 <a href="{yandex_map_url}">Отправитель</a>')
             else:
                 location_parts.append("📍 Отправитель: Не известно")
         else:
@@ -251,8 +247,7 @@ class MeshtasticMessage(BaseModel):
         # Местоположение получателя (только если получатель не "Всем")
         if self.to_node and self.to_node != "Всем":
             if node_cache_service:
-                recipient_position = node_cache_service.get_node_position(
-                    self.to_node)
+                recipient_position = node_cache_service.get_node_position(self.to_node)
                 if recipient_position:
                     latitude, longitude, altitude = recipient_position
                     yandex_map_url = (

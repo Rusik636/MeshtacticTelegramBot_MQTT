@@ -89,9 +89,7 @@ class AsyncMQTTRepository(MQTTRepository):
 
             logger.info("Успешно подключен к MQTT брокеру")
         except MqttError as e:
-            logger.error(
-                f"Ошибка подключения к MQTT брокеру: {e}",
-                exc_info=True)
+            logger.error(f"Ошибка подключения к MQTT брокеру: {e}", exc_info=True)
             raise
 
     async def disconnect(self) -> None:
@@ -102,8 +100,8 @@ class AsyncMQTTRepository(MQTTRepository):
                 logger.info("Отключен от MQTT брокера")
             except Exception as e:
                 logger.error(
-                    f"Ошибка при отключении от MQTT брокера: {e}",
-                    exc_info=True)
+                    f"Ошибка при отключении от MQTT брокера: {e}", exc_info=True
+                )
             finally:
                 self._client = None
 
@@ -116,15 +114,13 @@ class AsyncMQTTRepository(MQTTRepository):
             handler: Обработчик входящих сообщений
         """
         if not self._client:
-            raise RuntimeError(
-                "MQTT клиент не подключен. Вызовите connect() сначала.")
+            raise RuntimeError("MQTT клиент не подключен. Вызовите connect() сначала.")
 
         self._handler = handler
         self._subscribed_topic = topic
 
         try:
-            logger.info(
-                f"Подписка на MQTT топик: topic={topic}, qos={self.config.qos}")
+            logger.info(f"Подписка на MQTT топик: topic={topic}, qos={self.config.qos}")
             await self._client.subscribe(topic, qos=self.config.qos)
 
             # Запускаем обработку сообщений в бесконечном цикле
@@ -158,8 +154,7 @@ class AsyncMQTTRepository(MQTTRepository):
             qos: QoS уровень
         """
         if not self._client:
-            raise RuntimeError(
-                "MQTT клиент не подключен. Вызовите connect() сначала.")
+            raise RuntimeError("MQTT клиент не подключен. Вызовите connect() сначала.")
 
         try:
             # Преобразуем payload в bytes

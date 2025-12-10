@@ -89,8 +89,7 @@ class AsyncTelegramRepository(TelegramRepository):
                     f"Отправлено Telegram сообщение: chat_id={chat_id}, thread_id={message_thread_id}"
                 )
             else:
-                logger.debug(
-                    f"Отправлено Telegram сообщение: chat_id={chat_id}")
+                logger.debug(f"Отправлено Telegram сообщение: chat_id={chat_id}")
         except Exception as e:
             logger.error(
                 f"Ошибка при отправке Telegram сообщения: chat_id={chat_id}, thread_id={message_thread_id}, error={e}",
@@ -106,8 +105,7 @@ class AsyncTelegramRepository(TelegramRepository):
             text: Текст сообщения
         """
         if not self.config.group_chat_id:
-            logger.warning(
-                "Group chat ID не настроен, пропуск отправки в группу")
+            logger.warning("Group chat ID не настроен, пропуск отправки в группу")
             return
 
         try:
@@ -124,8 +122,8 @@ class AsyncTelegramRepository(TelegramRepository):
                 logger.info("Отправлено сообщение в групповой чат")
         except Exception as e:
             logger.error(
-                f"Ошибка при отправке сообщения в групповой чат: {e}",
-                exc_info=True)
+                f"Ошибка при отправке сообщения в групповой чат: {e}", exc_info=True
+            )
             raise
 
     async def send_to_user(self, user_id: int, text: str) -> None:
@@ -138,8 +136,7 @@ class AsyncTelegramRepository(TelegramRepository):
 
         try:
             await self.send_message(user_id, text)
-            logger.info(
-                f"Отправлено сообщение пользователю: user_id={user_id}")
+            logger.info(f"Отправлено сообщение пользователю: user_id={user_id}")
         except Exception as e:
             logger.error(
                 f"Ошибка при отправке сообщения пользователю: user_id={user_id}, error={e}",

@@ -45,7 +45,8 @@ class MQTTProxyTarget:
         try:
             logger.info(
                 f"Подключение к целевому MQTT брокеру: name={self.config.name}, "
-                f"host={self.config.host}, port={self.config.port}, tls={self.config.tls}")
+                f"host={self.config.host}, port={self.config.port}, tls={self.config.tls}"
+            )
 
             client_id = self.config.client_id or f"meshtastic-proxy-{self.config.name}"
 
@@ -60,7 +61,8 @@ class MQTTProxyTarget:
                     tls_context.verify_mode = ssl.CERT_NONE
                     logger.warning(
                         f"TLS проверка сертификата отключена для: name={self.config.name}. "
-                        f"Используйте только для тестирования или самоподписанных сертификатов!")
+                        f"Используйте только для тестирования или самоподписанных сертификатов!"
+                    )
 
             # В aiomqtt 2.0+ client_id передается через параметр identifier как
             # строка
@@ -162,12 +164,13 @@ class MQTTProxyTarget:
                 source_prefix = self._normalize_source_topic(self.source_topic)
                 if source_prefix and topic.startswith(source_prefix):
                     # Удаляем префикс исходного топика
-                    topic = topic[len(source_prefix):]
+                    topic = topic[len(source_prefix) :]
                     # Убираем ведущий слэш, если он есть
                     topic = topic.lstrip("/")
                     logger.debug(
                         f"Удален префикс исходного топика: source_prefix={source_prefix}, "
-                        f"remaining_topic={topic}")
+                        f"remaining_topic={topic}"
+                    )
 
             # Добавляем префикс прокси, если задан
             if self.config.topic_prefix:
@@ -200,11 +203,14 @@ class MQTTProxyTarget:
 
             logger.debug(
                 f"Опубликовано сообщение в целевой брокер: name={self.config.name}, "
-                f"topic={topic}, qos={self.config.qos}, payload_size={len(payload)} bytes")
+                f"topic={topic}, qos={self.config.qos}, payload_size={len(payload)} bytes"
+            )
         except MqttError as e:
             logger.error(
                 f"Ошибка при публикации в целевой брокер: name={self.config.name}, "
-                f"topic={topic}, error={e}", exc_info=True, )
+                f"topic={topic}, error={e}",
+                exc_info=True,
+            )
             # Не пробрасываем исключение, чтобы не прерывать обработку других
             # целей
 
@@ -212,10 +218,7 @@ class MQTTProxyTarget:
 class MQTTProxyService:
     """Управляет несколькими прокси-брокерами и пересылает в них сообщения."""
 
-    def __init__(
-            self,
-            targets: List[MQTTProxyTargetConfig],
-            source_topic: str = ""):
+    def __init__(self, targets: List[MQTTProxyTargetConfig], source_topic: str = ""):
         """
         Создает список прокси-целей из конфигурации.
 
