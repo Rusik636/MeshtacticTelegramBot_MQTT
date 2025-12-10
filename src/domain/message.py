@@ -3,6 +3,7 @@
 
 Представляет структурированное сообщение, полученное из MQTT.
 """
+import html
 from datetime import datetime
 from typing import Optional, Dict, Any, TYPE_CHECKING
 from pydantic import BaseModel, Field
@@ -116,29 +117,32 @@ class MeshtasticMessage(BaseModel):
         parts = []
         
         # Формируем информацию об отправителе с поддержкой UTF-8
+        # Экранируем все пользовательские данные для защиты от XSS
         sender_info = []
         if self.from_node_name:
-            # Название ноды (может содержать UTF-8 символы)
-            sender_info.append(self.from_node_name)
+            # Название ноды (может содержать UTF-8 символы) - экранируем HTML
+            sender_info.append(html.escape(self.from_node_name))
         elif self.from_node_short:
-            # Короткое имя ноды
-            sender_info.append(self.from_node_short)
+            # Короткое имя ноды - экранируем HTML
+            sender_info.append(html.escape(self.from_node_short))
         
         if self.from_node:
-            # ID ноды (hex формат)
+            # ID ноды (hex формат) - экранируем HTML
+            escaped_node_id = html.escape(self.from_node)
             if sender_info:
-                sender_info.append(f"({self.from_node})")
+                sender_info.append(f"({escaped_node_id})")
             else:
-                sender_info.append(self.from_node)
+                sender_info.append(escaped_node_id)
         
         if sender_info:
             # Объединяем информацию об отправителе
             sender_str = " ".join(sender_info)
             parts.append(f"📡 <b>От:</b> {sender_str}")
         
-        # Текст сообщения (может содержать UTF-8 символы)
+        # Текст сообщения (может содержать UTF-8 символы) - экранируем HTML
         if self.text:
-            parts.append(f"💬 <b>Текст:</b> {self.text}")
+            escaped_text = html.escape(self.text)
+            parts.append(f"💬 <b>Текст:</b> {escaped_text}")
         
         # Качество сигнала (RSSI и SNR с отдельными индикаторами)
         signal_parts = []
@@ -176,7 +180,10 @@ class MeshtasticMessage(BaseModel):
         if not parts:
             # Если не удалось извлечь структурированные данные, показываем raw
             parts.append("📨 Новое сообщение Meshtastic")
-            parts.append(f"Топик: {self.topic}")
+            if self.topic:
+                # Экранируем топик для защиты от XSS
+                escaped_topic = html.escape(self.topic)
+                parts.append(f"Топик: {escaped_topic}")
         
         return "\n".join(parts)
     

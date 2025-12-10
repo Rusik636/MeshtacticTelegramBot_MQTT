@@ -102,7 +102,12 @@ class AsyncTelegramRepository(TelegramRepository):
             parse_mode: Режим парсинга (HTML, Markdown и т.д.). По умолчанию HTML для поддержки ссылок.
         """
         try:
-            await self.bot.send_message(chat_id, text, parse_mode=parse_mode)
+            await self.bot.send_message(
+                chat_id, 
+                text, 
+                parse_mode=parse_mode,
+                disable_web_page_preview=True  # Отключаем предпросмотр ссылок
+            )
             logger.debug(f"Отправлено Telegram сообщение: chat_id={chat_id}")
         except Exception as e:
             logger.error(
