@@ -4,9 +4,17 @@
 Отвечает за парсинг и обработку сообщений от Meshtastic.
 Поддерживает UTF-8 для корректной обработки названий нод, тегов и текста сообщений.
 """
+import base64
 import json
 import logging
 from typing import Dict, Any, Optional
+
+try:
+    from google.protobuf.json_format import MessageToDict  # type: ignore
+    from meshtastic.protobuf import mqtt_pb2  # type: ignore
+    PROTOBUF_AVAILABLE = True
+except Exception:  # noqa: BLE001
+    PROTOBUF_AVAILABLE = False
 
 from src.domain.message import MeshtasticMessage
 
@@ -18,17 +26,19 @@ class MessageService:
     """
     Сервис для обработки сообщений от Meshtastic.
     
-    Парсит JSON payload из MQTT и создает доменные модели сообщений.
+    Парсит payload (JSON или protobuf) из MQTT и создает доменные модели сообщений.
     """
     
-    def __init__(self, node_cache_service: Optional[Any] = None):
+    def __init__(self, node_cache_service: Optional[Any] = None, payload_format: str = "json"):
         """
         Инициализирует сервис обработки сообщений.
         
         Args:
             node_cache_service: Сервис кэша нод (опционально)
+            payload_format: Формат входящих сообщений (json | protobuf | both)
         """
         self.node_cache_service = node_cache_service
+        self.payload_format = payload_format.lower() if payload_format else "json"
     
     def parse_mqtt_message(self, topic: str, payload: bytes) -> MeshtasticMessage:
         """
@@ -41,11 +51,21 @@ class MessageService:
         Returns:
             Объект MeshtasticMessage
         """
+        is_protobuf_topic = "/e/" in topic and "/json/" not in topic
+        should_parse_protobuf = self.payload_format in ("protobuf", "both") and is_protobuf_topic
+        should_parse_json = self.payload_format in ("json", "both") and not is_protobuf_topic
+
         try:
-            # Декодируем payload
-            payload_str = payload.decode("utf-8")
-            raw_payload: Dict[str, Any] = json.loads(payload_str)
-            
+            if should_parse_protobuf:
+                raw_payload = self._parse_protobuf_payload(payload)
+            elif should_parse_json:
+                payload_str = payload.decode("utf-8", errors="replace")
+                raw_payload: Dict[str, Any] = json.loads(payload_str)
+            else:
+                raise ValueError(
+                    f"Сообщение не соответствует выбранному формату payload_format={self.payload_format}, topic={topic}"
+                )
+
             # Извлекаем тип сообщения
             message_type = raw_payload.get("type")
             
@@ -271,4 +291,63 @@ class MessageService:
                 topic=topic,
                 raw_payload={"error": str(e), "raw": raw_str},
             )
+
+    def _parse_protobuf_payload(self, payload: bytes) -> Dict[str, Any]:
+        """
+        Парсит protobuf payload Meshtastic (ServiceEnvelope) в словарь,
+        максимально совместимый с текущей JSON-логикой.
+        """
+        if not PROTOBUF_AVAILABLE:
+            raise RuntimeError(
+                "Выбран payload_format=protobuf, но зависимости meshtastic/protobuf не установлены."
+            )
+
+        envelope = mqtt_pb2.ServiceEnvelope()
+        envelope.ParseFromString(payload)
+
+        envelope_dict = MessageToDict(
+            envelope,
+            preserving_proto_field_name=True,
+            including_default_value_fields=False,
+        )
+
+        packet = envelope_dict.get("packet", {}) if isinstance(envelope_dict, dict) else {}
+        decoded = packet.get("decoded", {}) if isinstance(packet, dict) else {}
+
+        raw_payload: Dict[str, Any] = {
+            "type": None,
+            "id": packet.get("id"),
+            "from": packet.get("from"),
+            "to": packet.get("to"),
+            "hops_away": packet.get("hop_limit"),
+            "timestamp": packet.get("rx_time") or packet.get("timestamp"),
+            "rx_time": packet.get("rx_time"),
+            "rssi": packet.get("rx_rssi"),
+            "snr": packet.get("rx_snr"),
+            "payload": {},
+        }
+
+        portnum = decoded.get("portnum")
+        if portnum:
+            portnum_lower = str(portnum).lower()
+            if "text" in portnum_lower:
+                raw_payload["type"] = "text"
+            elif "node" in portnum_lower:
+                raw_payload["type"] = "nodeinfo"
+            elif "position" in portnum_lower:
+                raw_payload["type"] = "position"
+
+        payload_b64 = decoded.get("payload")
+        if payload_b64:
+            try:
+                decoded_bytes = base64.b64decode(payload_b64)
+                if raw_payload["type"] == "text":
+                    text = decoded_bytes.decode("utf-8", errors="replace")
+                    raw_payload["payload"] = {"text": text}
+                else:
+                    raw_payload["payload"] = {"raw_base64": payload_b64}
+            except Exception:
+                raw_payload["payload"] = {"raw_base64": payload_b64}
+
+        return raw_payload
 

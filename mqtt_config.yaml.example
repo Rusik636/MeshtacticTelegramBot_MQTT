@@ -15,6 +15,7 @@ mqtt_source:
   client_id: meshtastic-telegram-bot
   keepalive: 60
   qos: 1  # QoS уровень подписки (0, 1 или 2)
+  payload_format: json  # json | protobuf | both
 
 # Список прокси-брокеров (можно добавить несколько)
 mqtt_proxy_targets:

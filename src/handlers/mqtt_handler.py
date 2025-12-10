@@ -46,6 +46,7 @@ class MQTTMessageHandlerImpl(MQTTMessageHandler):
         self.proxy_service = proxy_service
         self.message_service = message_service
         self.notify_user_ids = notify_user_ids
+        self.payload_format = getattr(message_service, "payload_format", "json")
     
     async def handle_message(self, topic: str, payload: bytes) -> None:
         """
@@ -56,13 +57,12 @@ class MQTTMessageHandlerImpl(MQTTMessageHandler):
             payload: Данные сообщения
         """
         try:
-            # Пропускаем protobuf сообщения (топики с /e/), так как они дублируют JSON сообщения
-            # Meshtastic публикует сообщения в двух форматах:
-            # - msh/2/json/2/e/... - protobuf (бинарный формат)
-            # - msh/2/json/2/json/... - JSON (текстовый формат)
-            # Обрабатываем только JSON формат, чтобы избежать ошибок парсинга
-            if "/e/" in topic and "/json/" not in topic:
-                logger.debug(f"Пропущено protobuf сообщение (дубликат JSON): topic={topic}")
+            is_protobuf_topic = "/e/" in topic and "/json/" not in topic
+            if self.payload_format == "json" and is_protobuf_topic:
+                logger.debug(f"Пропущено protobuf сообщение (payload_format=json): topic={topic}")
+                return
+            if self.payload_format == "protobuf" and not is_protobuf_topic:
+                logger.debug(f"Пропущено JSON сообщение (payload_format=protobuf): topic={topic}")
                 return
             
             logger.info(f"Получено MQTT сообщение: topic={topic}, payload_size={len(payload)}")

@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false
 """
 Конфигурация приложения.
 Загружает переменные окружения из .env файла и/или YAML файла.
@@ -9,16 +10,22 @@ import os
 import sys
 import logging
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, TYPE_CHECKING
 from dotenv import load_dotenv
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import importlib
 
+yaml = None
+YAML_AVAILABLE = False
 try:
-    import yaml
+    yaml = importlib.import_module("yaml")  # type: ignore
     YAML_AVAILABLE = True
 except ImportError:
     YAML_AVAILABLE = False
+
+if TYPE_CHECKING:
+    from typing import Any as _yaml  # noqa: F401
 
 # Загружаем переменные окружения из .env
 load_dotenv()
@@ -75,6 +82,10 @@ class MQTTBrokerConfig(BaseSettings):
     client_id: str = Field(default="meshtastic-telegram-bot", description="MQTT client ID")
     keepalive: int = Field(default=60, description="Keepalive интервал в секундах")
     qos: int = Field(default=1, description="QoS уровень подписки")
+    payload_format: str = Field(
+        default="json",
+        description="Формат сообщений Meshtastic: json | protobuf | both"
+    )
     
     @field_validator("qos")
     @classmethod
@@ -83,6 +94,16 @@ class MQTTBrokerConfig(BaseSettings):
         if v not in (0, 1, 2):
             raise ValueError("QoS должен быть 0, 1 или 2")
         return v
+
+    @field_validator("payload_format")
+    @classmethod
+    def validate_payload_format(cls, v: str) -> str:
+        """Валидация формата payload."""
+        allowed = {"json", "protobuf", "both"}
+        value = v.lower().strip()
+        if value not in allowed:
+            raise ValueError(f"payload_format должен быть одним из {allowed}")
+        return value
 
 
 class MQTTProxyTargetConfig(BaseSettings):
