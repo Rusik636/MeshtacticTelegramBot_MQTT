@@ -36,6 +36,9 @@ class MeshtasticMessage(BaseModel):
     from_node_name: Optional[str] = Field(default=None, description="Название ноды отправителя")
     from_node_short: Optional[str] = Field(default=None, description="Короткое имя ноды отправителя")
     to_node: Optional[str] = Field(default=None, description="ID получателя")
+    to_node_name: Optional[str] = Field(default=None, description="Название ноды получателя")
+    to_node_short: Optional[str] = Field(default=None, description="Короткое имя ноды получателя")
+    hops_away: Optional[int] = Field(default=None, description="Количество ретрансляций (hops)")
     text: Optional[str] = Field(default=None, description="Текст сообщения")
     timestamp: Optional[int] = Field(default=None, description="Unix timestamp сообщения")
     rssi: Optional[int] = Field(default=None, description="RSSI (Received Signal Strength Indicator) в dBm")
@@ -116,33 +119,73 @@ class MeshtasticMessage(BaseModel):
         """
         parts = []
         
-        # Формируем информацию об отправителе с поддержкой UTF-8
+        # Временная метка в формате чч:мм дд.мм.гггг (вверху)
+        if self.timestamp:
+            try:
+                dt = datetime.fromtimestamp(self.timestamp)
+                # Формат: чч:мм дд.мм.гггг (например: 22:30 09.12.2025)
+                parts.append(f"🕐 <b>{dt.strftime('%H:%M %d.%m.%Y')}</b>")
+            except (ValueError, OSError):
+                pass
+        
+        # Формируем информацию об отправителе
         # Экранируем все пользовательские данные для защиты от XSS
         sender_info = []
-        if self.from_node_name:
-            # Название ноды (может содержать UTF-8 символы) - экранируем HTML
+        
+        if self.from_node_name and self.from_node_short:
+            # Если есть и longname и shortname: longname (shortname)
+            escaped_longname = html.escape(self.from_node_name)
+            escaped_shortname = html.escape(self.from_node_short)
+            sender_info.append(f"{escaped_longname} ({escaped_shortname})")
+        elif self.from_node_name:
+            # Если есть только longname: longname
             sender_info.append(html.escape(self.from_node_name))
         elif self.from_node_short:
-            # Короткое имя ноды - экранируем HTML
+            # Если есть только shortname: shortname (без скобок)
             sender_info.append(html.escape(self.from_node_short))
-        
-        if self.from_node:
-            # ID ноды (hex формат) - экранируем HTML
-            escaped_node_id = html.escape(self.from_node)
-            if sender_info:
-                sender_info.append(f"({escaped_node_id})")
-            else:
-                sender_info.append(escaped_node_id)
+        elif self.from_node:
+            # Иначе: hex ID от from
+            sender_info.append(html.escape(self.from_node))
         
         if sender_info:
             # Объединяем информацию об отправителе
             sender_str = " ".join(sender_info)
-            parts.append(f"📡 <b>От:</b> {sender_str}")
+            parts.append(f"\n📡 <b>От:</b> {sender_str}")
         
-        # Текст сообщения (может содержать UTF-8 символы) - экранируем HTML
-        if self.text:
-            escaped_text = html.escape(self.text)
-            parts.append(f"💬 <b>Текст:</b> {escaped_text}")
+        # Формируем информацию о получателе
+        if self.to_node:
+            recipient_info = []
+            # Если to_node = "Всем", просто показываем "Всем"
+            if self.to_node == "Всем":
+                recipient_info.append("Всем")
+            else:
+                # Получаем информацию о получателе из кэша, если доступен
+                if node_cache_service:
+                    cached_to_name = node_cache_service.get_node_name(self.to_node)
+                    cached_to_short = node_cache_service.get_node_shortname(self.to_node)
+                    
+                    if cached_to_name:
+                        recipient_info.append(html.escape(cached_to_name))
+                    elif cached_to_short:
+                        recipient_info.append(html.escape(cached_to_short))
+                
+                # Добавляем ID получателя
+                escaped_to_node = html.escape(self.to_node)
+                if recipient_info:
+                    recipient_info.append(f"({escaped_to_node})")
+                else:
+                    recipient_info.append(escaped_to_node)
+            
+            if recipient_info:
+                recipient_str = " ".join(recipient_info)
+                parts.append(f"📨 <b>Кому:</b> {recipient_str}\n")
+        
+        # Информация о ретрансляции
+        if self.hops_away is not None:
+            if self.hops_away == 0:
+                parts.append("📬 Прямая доставка")
+            else:
+                parts.append(f"🔄 Ретранслировано {self.hops_away} раз")
         
         # Качество сигнала (RSSI и SNR с отдельными индикаторами)
         signal_parts = []
@@ -157,25 +200,42 @@ class MeshtasticMessage(BaseModel):
         if signal_parts:
             parts.append(f"📶 {' | '.join(signal_parts)}")
         
-        # Местоположение (ссылка на Яндекс Карты)
-        if node_cache_service and self.from_node:
-            position = node_cache_service.get_node_position(self.from_node)
-            if position:
-                latitude, longitude, altitude = position
-                # Формируем ссылку на Яндекс Карты
-                yandex_map_url = f"https://yandex.ru/maps/?pt={longitude},{latitude}&z=15&l=map"
-                parts.append(f"📍 <a href=\"{yandex_map_url}\">Местоположение</a>")
-            else:
-                parts.append("📍 Местоположение неизвестно")
+        # Местоположение отправителя и получателя (ссылки на Яндекс Карты)
+        location_parts = []
         
-        # Временная метка в формате чч:мм дд.мм.гггг
-        if self.timestamp:
-            try:
-                dt = datetime.fromtimestamp(self.timestamp)
-                # Формат: чч:мм дд.мм.гггг (например: 22:30 09.12.2025)
-                parts.append(f"🕐 {dt.strftime('%H:%M %d.%m.%Y')}")
-            except (ValueError, OSError):
-                pass
+        # Местоположение отправителя
+        if node_cache_service and self.from_node:
+            sender_position = node_cache_service.get_node_position(self.from_node)
+            if sender_position:
+                latitude, longitude, altitude = sender_position
+                yandex_map_url = f"https://yandex.ru/maps/?pt={longitude},{latitude}&z=15&l=map"
+                location_parts.append(f"📍 <a href=\"{yandex_map_url}\">Отправитель</a>")
+            else:
+                location_parts.append("📍 Отправитель: Не известно")
+        else:
+            location_parts.append("📍 Отправитель: Не известно")
+        
+        # Местоположение получателя (только если получатель не "Всем")
+        if self.to_node and self.to_node != "Всем":
+            if node_cache_service:
+                recipient_position = node_cache_service.get_node_position(self.to_node)
+                if recipient_position:
+                    latitude, longitude, altitude = recipient_position
+                    yandex_map_url = f"https://yandex.ru/maps/?pt={longitude},{latitude}&z=15&l=map"
+                    location_parts.append(f"📍 <a href=\"{yandex_map_url}\">Получатель</a>")
+                else:
+                    location_parts.append("📍 Получатель: Не известно")
+            else:
+                location_parts.append("📍 Получатель: Не известно")
+        
+        if location_parts:
+            parts.append(" | ".join(location_parts))
+        
+        # Текст сообщения в цитате (может содержать UTF-8 символы) - экранируем HTML (внизу)
+        if self.text:
+            escaped_text = html.escape(self.text)
+            # Формируем сообщение с цитатой: "💬 Сообщение:\n" + текст в цитате
+            parts.append(f"\n💬 <b>Сообщение:</b>\n<blockquote>{escaped_text}</blockquote>")
         
         if not parts:
             # Если не удалось извлечь структурированные данные, показываем raw

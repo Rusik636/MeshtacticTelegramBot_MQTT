@@ -54,6 +54,7 @@ class MessageService:
             message_id = raw_payload.get("id")
             from_node = raw_payload.get("from")
             to_node = raw_payload.get("to")
+            hops_away = raw_payload.get("hops_away")
             timestamp = raw_payload.get("rx_time") or raw_payload.get("timestamp")
             
             # Извлекаем текст в зависимости от типа сообщения
@@ -63,6 +64,16 @@ class MessageService:
                 # Если текст не найден в payload, пробуем другие варианты
                 if not text:
                     text = raw_payload.get("text")
+            
+            # Если from_node в hex формате, конвертируем для отображения
+            # from_node - это реальный отправитель, sender - это нода-ретранслятор
+            from_node_str = None
+            if from_node:
+                # Meshtastic использует hex формат для ID нод (например, 0x698535e0)
+                if isinstance(from_node, (int, str)):
+                    from_node_str = f"!{hex(int(from_node))[2:]}" if isinstance(from_node, int) else str(from_node)
+                else:
+                    from_node_str = str(from_node)
             
             # Извлекаем информацию о ноде отправителе (название, тег) с поддержкой UTF-8
             from_node_name = None
@@ -89,14 +100,13 @@ class MessageService:
                 # Для position извлекаем координаты из payload
                 payload_data = raw_payload.get("payload", {})
                 if isinstance(payload_data, dict) and self.node_cache_service:
-                    # Извлекаем ID ноды из sender или from
-                    node_id = raw_payload.get("sender")
-                    if not node_id:
-                        # Если sender нет, пробуем конвертировать from в hex формат
-                        from_node_raw = raw_payload.get("from")
-                        if from_node_raw:
-                            if isinstance(from_node_raw, (int, str)):
-                                node_id = f"!{hex(int(from_node_raw))[2:]}" if isinstance(from_node_raw, int) else str(from_node_raw)
+                    # Извлекаем ID ноды из from (реальный отправитель), а не sender (ретранслятор)
+                    node_id = None
+                    from_node_raw = raw_payload.get("from")
+                    if from_node_raw:
+                        # Конвертируем from в hex формат
+                        if isinstance(from_node_raw, (int, str)):
+                            node_id = f"!{hex(int(from_node_raw))[2:]}" if isinstance(from_node_raw, int) else str(from_node_raw)
                     
                     if node_id:
                         # Извлекаем координаты
@@ -139,39 +149,36 @@ class MessageService:
                             logger.warning(f"Получено сообщение position без координат для ноды: {node_id}")
                     else:
                         logger.warning("Получено сообщение position без ID ноды (sender/from отсутствует)")
-            else:
-                # Для других типов сообщений пробуем стандартные поля
-                if "sender" in raw_payload:
-                    sender = raw_payload["sender"]
-                    if isinstance(sender, dict):
-                        from_node_name = sender.get("long_name") or sender.get("name")
-                        from_node_short = sender.get("short_name")
-                    elif isinstance(sender, str):
-                        from_node_name = sender
-                
-                # Альтернативные поля
-                if not from_node_name:
-                    from_node_name = raw_payload.get("sender_long") or raw_payload.get("from_name")
-                if not from_node_short:
-                    from_node_short = raw_payload.get("sender_short")
-                
-            # Если from_node в hex формате, конвертируем для отображения
-            from_node_str = None
-            if from_node:
-                # Meshtastic использует hex формат для ID нод (например, 0x698535e0)
-                if isinstance(from_node, (int, str)):
-                    from_node_str = f"!{hex(int(from_node))[2:]}" if isinstance(from_node, int) else str(from_node)
-                else:
-                    from_node_str = str(from_node)
             
-            # Если информация не найдена в сообщении, пробуем получить из кэша
+            # Для всех типов сообщений (кроме nodeinfo) получаем имя отправителя из кэша
+            # Используем from_node_str (реальный отправитель), а не sender (ретранслятор)
             if message_type != "nodeinfo" and self.node_cache_service and from_node_str:
                 cached_name = self.node_cache_service.get_node_name(from_node_str)
                 cached_short = self.node_cache_service.get_node_shortname(from_node_str)
-                if cached_name and not from_node_name:
+                if cached_name:
                     from_node_name = cached_name
-                if cached_short and not from_node_short:
+                if cached_short:
                     from_node_short = cached_short
+            
+            # Извлекаем информацию о получателе (to_node) из кэша
+            to_node_name = None
+            to_node_short = None
+            to_node_str = None
+            
+            if to_node is not None:
+                # Конвертируем to_node в строку
+                if isinstance(to_node, (int, str)):
+                    to_node_str = f"!{hex(int(to_node))[2:]}" if isinstance(to_node, int) else str(to_node)
+                else:
+                    to_node_str = str(to_node)
+                
+                # Если to_node = 4294967295 (0xFFFFFFFF), это "Всем"
+                if to_node == 4294967295 or to_node_str == "!ffffffff":
+                    to_node_str = "Всем"
+                elif self.node_cache_service:
+                    # Получаем информацию о получателе из кэша
+                    to_node_name = self.node_cache_service.get_node_name(to_node_str)
+                    to_node_short = self.node_cache_service.get_node_shortname(to_node_str)
             
             # Извлекаем информацию о качестве сигнала (RSSI и SNR)
             rssi = raw_payload.get("rssi")
@@ -191,6 +198,14 @@ class MessageService:
                 except (ValueError, TypeError):
                     snr = None
             
+            # Конвертируем hops_away в int, если возможно
+            hops_away_int = None
+            if hops_away is not None:
+                try:
+                    hops_away_int = int(hops_away)
+                except (ValueError, TypeError):
+                    hops_away_int = None
+            
             message = MeshtasticMessage(
                 topic=topic,
                 raw_payload=raw_payload,
@@ -198,7 +213,10 @@ class MessageService:
                 from_node=from_node_str,
                 from_node_name=from_node_name,  # Поддерживает UTF-8
                 from_node_short=from_node_short,  # Поддерживает UTF-8
-                to_node=str(to_node) if to_node else None,
+                to_node=to_node_str,
+                to_node_name=to_node_name,  # Поддерживает UTF-8
+                to_node_short=to_node_short,  # Поддерживает UTF-8
+                hops_away=hops_away_int,
                 text=text,  # Поддерживает UTF-8
                 timestamp=timestamp,
                 rssi=rssi,
