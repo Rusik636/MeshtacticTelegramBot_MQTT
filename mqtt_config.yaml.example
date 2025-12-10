@@ -11,7 +11,7 @@ mqtt_source:
   port: 1883
   username: ""  # Оставьте пустым, если не требуется аутентификация
   password: ""  # Оставьте пустым, если не требуется аутентификация
-  topic: msh/2/json/#
+  topic: msh/#
   client_id: meshtastic-telegram-bot
   keepalive: 60
   qos: 1  # QoS уровень подписки (0, 1 или 2)
