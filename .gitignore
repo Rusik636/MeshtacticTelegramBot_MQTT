@@ -57,3 +57,6 @@ mosquitto/log/*
 # Bot data
 data/*
 !data/.gitkeep
+
+# MQTT configuration (может содержать секреты)
+mqtt_config.yaml

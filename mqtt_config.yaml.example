@@ -1,0 +1,41 @@
+# Конфигурация MQTT брокеров для Meshtastic Telegram Bot
+# Этот файл используется для настройки основного MQTT брокера и списка прокси-брокеров
+# 
+# Обратная совместимость: если файл не найден или не содержит нужных настроек,
+# используются значения из .env файла (переменные окружения)
+
+# Основной MQTT брокер (источник данных)
+mqtt_source:
+  host: mosquitto  # Для Docker Compose используйте имя сервиса 'mosquitto'
+                   # Для локального запуска используйте 'localhost'
+  port: 1883
+  username: ""  # Оставьте пустым, если не требуется аутентификация
+  password: ""  # Оставьте пустым, если не требуется аутентификация
+  topic: msh/2/json/#
+  client_id: meshtastic-telegram-bot
+  keepalive: 60
+  qos: 1  # QoS уровень подписки (0, 1 или 2)
+
+# Список прокси-брокеров (можно добавить несколько)
+mqtt_proxy_targets:
+  - name: external_broker_1
+    host: external.mqtt.broker.com
+    port: 1883
+    username: ""  # Оставьте пустым, если не требуется аутентификация
+    password: ""  # Оставьте пустым, если не требуется аутентификация
+    topic_prefix: ""  # Префикс для топика (опционально)
+    client_id: ""  # Оставьте пустым для автоматической генерации
+    enabled: true  # Включить/выключить этот прокси
+    qos: 1  # QoS уровень публикации (0, 1 или 2)
+  
+  # Пример второго прокси-брокера:
+  # - name: external_broker_2
+  #   host: another.mqtt.broker.com
+  #   port: 1883
+  #   username: user2
+  #   password: pass2
+  #   topic_prefix: meshtastic/
+  #   client_id: meshtastic-proxy-2
+  #   enabled: true
+  #   qos: 1
+

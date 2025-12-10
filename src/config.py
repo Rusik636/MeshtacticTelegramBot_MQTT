@@ -1,16 +1,24 @@
 """
 Конфигурация приложения.
-Загружает переменные окружения из .env файла.
+Загружает переменные окружения из .env файла и/или YAML файла.
 
 Использует Pydantic Settings для валидации и загрузки из переменных окружения.
+Поддерживает загрузку MQTT конфигурации из YAML файла с обратной совместимостью.
 """
 import os
 import sys
 import logging
-from typing import List, Optional
+from pathlib import Path
+from typing import List, Optional, Dict, Any
 from dotenv import load_dotenv
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+try:
+    import yaml
+    YAML_AVAILABLE = True
+except ImportError:
+    YAML_AVAILABLE = False
 
 # Загружаем переменные окружения из .env
 load_dotenv()
@@ -212,15 +220,94 @@ class AppConfig(BaseSettings):
         description="Формат логов: json или text"
     )
     
+    @classmethod
+    def load_from_yaml(cls, yaml_path: Optional[str] = None) -> "AppConfig":
+        """
+        Загружает конфигурацию из YAML файла с обратной совместимостью.
+        
+        Если YAML файл не найден или не содержит нужных настроек,
+        используются значения из переменных окружения (.env).
+        
+        Args:
+            yaml_path: Путь к YAML файлу. По умолчанию ищет 'mqtt_config.yaml' в корне проекта.
+        
+        Returns:
+            Экземпляр AppConfig с загруженными настройками.
+        """
+        if not YAML_AVAILABLE:
+            logging.warning("PyYAML не установлен. Используется только конфигурация из .env")
+            return cls()
+        
+        if yaml_path is None:
+            # Ищем mqtt_config.yaml в корне проекта
+            yaml_path = Path("mqtt_config.yaml")
+        else:
+            yaml_path = Path(yaml_path)
+        
+        # Создаем базовую конфигурацию из .env (для обратной совместимости)
+        config = cls()
+        
+        # Если YAML файл не существует, возвращаем конфигурацию из .env
+        if not yaml_path.exists():
+            logging.info(f"YAML файл {yaml_path} не найден. Используется конфигурация из .env")
+            return config
+        
+        try:
+            with open(yaml_path, "r", encoding="utf-8") as f:
+                yaml_data = yaml.safe_load(f)
+            
+            if not yaml_data:
+                logging.warning(f"YAML файл {yaml_path} пуст. Используется конфигурация из .env")
+                return config
+            
+            # Загружаем MQTT source из YAML
+            if "mqtt_source" in yaml_data:
+                mqtt_source_data = yaml_data["mqtt_source"]
+                # Обновляем конфигурацию, используя значения из YAML
+                # Переменные окружения имеют приоритет (уже загружены в config)
+                for key, value in mqtt_source_data.items():
+                    if hasattr(config.mqtt_source, key) and not os.getenv(f"MQTT_SOURCE_{key.upper()}"):
+                        setattr(config.mqtt_source, key, value)
+                logging.info("Загружена конфигурация MQTT source из YAML")
+            
+            # Загружаем MQTT proxy targets из YAML
+            if "mqtt_proxy_targets" in yaml_data:
+                proxy_targets_data = yaml_data["mqtt_proxy_targets"]
+                if isinstance(proxy_targets_data, list):
+                    proxy_targets = []
+                    for target_data in proxy_targets_data:
+                        try:
+                            # Создаем конфигурацию прокси-цели
+                            target_config = MQTTProxyTargetConfig(**target_data)
+                            if target_config.enabled:
+                                proxy_targets.append(target_config)
+                        except Exception as e:
+                            logging.warning(f"Ошибка при загрузке прокси-цели из YAML: {e}")
+                            continue
+                    
+                    if proxy_targets:
+                        config.mqtt_proxy_targets = proxy_targets
+                        logging.info(f"Загружено {len(proxy_targets)} прокси-целей из YAML")
+            
+        except yaml.YAMLError as e:
+            logging.error(f"Ошибка при парсинге YAML файла {yaml_path}: {e}")
+            logging.info("Используется конфигурация из .env")
+        except Exception as e:
+            logging.error(f"Ошибка при загрузке YAML файла {yaml_path}: {e}")
+            logging.info("Используется конфигурация из .env")
+        
+        return config
+    
     @model_validator(mode="after")
     def load_proxy_targets(self) -> "AppConfig":
         """
-        Загружает прокси-цели из переменных окружения.
+        Загружает прокси-цели из переменных окружения (для обратной совместимости).
         
         Поддерживает загрузку одной цели с префиксом MQTT_PROXY_TARGET_.
         Если заданы переменные окружения, но список пуст, пытается загрузить конфигурацию.
+        Вызывается только если прокси-цели не были загружены из YAML.
         """
-        # Если уже есть цели, не перезаписываем
+        # Если уже есть цели (например, из YAML), не перезаписываем
         if self.mqtt_proxy_targets:
             return self
         
@@ -231,7 +318,7 @@ class AppConfig(BaseSettings):
             return self
         
         # Пробуем загрузить одну цель (базовая поддержка)
-        # Для множественных целей можно расширить функционал позже
+        # Для множественных целей используйте YAML файл
         try:
             target_config = MQTTProxyTargetConfig()
             if target_config.enabled and target_config.host:
