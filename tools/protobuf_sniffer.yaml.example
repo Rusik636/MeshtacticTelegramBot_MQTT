@@ -1,0 +1,11 @@
+host: mosquitto          # или localhost
+port: 1883
+topic: msh/2/e/#         # protobuf-топики Meshtastic
+username: ""
+password: ""
+client_id: meshtastic-sniffer
+keepalive: 60
+qos: 0
+pretty: true
+color: true
+

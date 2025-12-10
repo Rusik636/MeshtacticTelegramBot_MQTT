@@ -18,3 +18,9 @@ protobuf>=4.24.0
 # Type hints
 typing-extensions>=4.8.0
 
+# Optional: цветной вывод в sniffer
+pygments>=2.14.0
+
+# Optional: для декомпрессии Unishox2 (TEXT_MESSAGE_COMPRESSED_APP)
+# Пропущено из requirements из-за отсутствия готовых колёс; используем опциональный импорт
+
