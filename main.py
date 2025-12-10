@@ -33,9 +33,9 @@ async def main() -> None:
                 "или через переменные окружения системы."
             )
         
-    # Загружаем конфигурацию (сначала из YAML, затем из .env для обратной совместимости)
-    try:
-        config = AppConfig.load_from_yaml()
+        # Загружаем конфигурацию (сначала из YAML, затем из .env для обратной совместимости)
+        try:
+            config = AppConfig.load_from_yaml()
         except ValueError as e:
             # Ошибки валидации конфигурации
             logger.error(f"Ошибка конфигурации: {e}")
