@@ -116,10 +116,6 @@ class TelegramConfig(BaseSettings):
     
     bot_token: str = Field(description="Токен Telegram бота")
     group_chat_id: Optional[int] = Field(default=None, description="ID группового чата")
-    reply_to_message_id: Optional[int] = Field(
-        default=None,
-        description="ID сообщения для ответа (для создания тредов в супергруппах)"
-    )
     allowed_user_ids: Optional[List[int]] = Field(
         default=None,
         description="Список разрешенных user_id для личных сообщений (None = все)"
@@ -154,39 +150,6 @@ class TelegramConfig(BaseSettings):
                 return int(v)
             except ValueError:
                 raise ValueError(f"Некорректный формат group_chat_id: {v}")
-        
-        return None
-    
-    @field_validator("reply_to_message_id", mode="before")
-    @classmethod
-    def parse_reply_to_message_id(cls, v: str | int | None) -> int | None:
-        """
-        Парсит reply_to_message_id из строки или числа.
-        
-        Обрабатывает пустые строки как None.
-        Используется для создания тредов (threads) в супергруппах Telegram.
-        
-        Args:
-            v: Значение из переменной окружения или конфигурации
-            
-        Returns:
-            Целое число или None
-        """
-        if v is None:
-            return None
-        
-        if isinstance(v, int):
-            return v
-        
-        if isinstance(v, str):
-            v = v.strip()
-            if not v or v.lower() in ("none", "null", ""):
-                return None
-            
-            try:
-                return int(v)
-            except ValueError:
-                raise ValueError(f"Некорректный формат reply_to_message_id: {v}")
         
         return None
     
