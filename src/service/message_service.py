@@ -47,6 +47,7 @@ class BaseParser:
         message_type = raw_payload.get("type")
         message_id = raw_payload.get("id")
         from_node = raw_payload.get("from")
+        sender_node = raw_payload.get("sender")
         to_node = raw_payload.get("to")
         hops_away = raw_payload.get("hops_away")
         hop_start = raw_payload.get("hop_start")
@@ -145,6 +146,29 @@ class BaseParser:
             if cached_short:
                 from_node_short = cached_short
 
+        # sender_node (ретранслятор)
+        sender_node_str = None
+        sender_node_name = None
+        sender_node_short = None
+        if sender_node:
+            if isinstance(sender_node, (int, str)):
+                sender_node_str = (
+                    f"!{hex(int(sender_node))[2:]}"
+                    if isinstance(sender_node, int)
+                    else str(sender_node)
+                )
+            else:
+                sender_node_str = str(sender_node)
+
+            # Кэширование ретранслятора
+            if message_type != "nodeinfo" and self.node_cache_service and sender_node_str:
+                cached_sender_name = self.node_cache_service.get_node_name(sender_node_str)
+                cached_sender_short = self.node_cache_service.get_node_shortname(sender_node_str)
+                if cached_sender_name:
+                    sender_node_name = cached_sender_name
+                if cached_sender_short:
+                    sender_node_short = cached_sender_short
+
         # Получатель
         to_node_name = None
         to_node_short = None
@@ -200,6 +224,9 @@ class BaseParser:
             from_node=from_node_str,
             from_node_name=from_node_name,
             from_node_short=from_node_short,
+            sender_node=sender_node_str,
+            sender_node_name=sender_node_name,
+            sender_node_short=sender_node_short,
             to_node=to_node_str,
             to_node_name=to_node_name,
             to_node_short=to_node_short,
@@ -272,6 +299,7 @@ class ProtobufMessageParser(BaseParser):
             "portnum": decoded.get("portnum"),
             "id": packet.get("id"),
             "from": packet.get("from"),
+            "sender": packet.get("sender"),
             "to": packet.get("to"),
             "hop_start": packet.get("hop_start"),
             "hop_limit": packet.get("hop_limit"),
@@ -563,6 +591,7 @@ class MessageService:
             "portnum": decoded.get("portnum"),
             "id": packet.get("id"),
             "from": packet.get("from"),
+            "sender": packet.get("sender"),
             "to": packet.get("to"),
             "hop_start": packet.get("hop_start"),
             "hop_limit": packet.get("hop_limit"),

@@ -44,6 +44,15 @@ class MeshtasticMessage(BaseModel):
     from_node_short: Optional[str] = Field(
         default=None, description="Короткое имя ноды отправителя"
     )
+    sender_node: Optional[str] = Field(
+        default=None, description="ID ноды, которая ретранслировала сообщение"
+    )
+    sender_node_name: Optional[str] = Field(
+        default=None, description="Название ноды, которая ретранслировала сообщение"
+    )
+    sender_node_short: Optional[str] = Field(
+        default=None, description="Короткое имя ноды, которая ретранслировала сообщение"
+    )
     to_node: Optional[str] = Field(default=None, description="ID получателя")
     to_node_name: Optional[str] = Field(
         default=None, description="Название ноды получателя"
@@ -177,6 +186,32 @@ class MeshtasticMessage(BaseModel):
             sender_str = " ".join(sender_info)
             parts.append(f"\n📡 <b>От:</b> {sender_str}")
 
+        # Формируем информацию о ретрансляторе (sender)
+        # Показываем только если sender отличается от from_node (сообщение было ретранслировано)
+        if self.sender_node and self.sender_node != self.from_node:
+            # Экранируем все пользовательские данные для защиты от XSS
+            repeater_info = []
+
+            if self.sender_node_name and self.sender_node_short:
+                # Если есть и longname и shortname: longname (shortname)
+                escaped_longname = html.escape(self.sender_node_name)
+                escaped_shortname = html.escape(self.sender_node_short)
+                repeater_info.append(f"{escaped_longname} ({escaped_shortname})")
+            elif self.sender_node_name:
+                # Если есть только longname: longname
+                repeater_info.append(html.escape(self.sender_node_name))
+            elif self.sender_node_short:
+                # Если есть только shortname: shortname (без скобок)
+                repeater_info.append(html.escape(self.sender_node_short))
+            else:
+                # Иначе: hex ID от sender
+                repeater_info.append(html.escape(self.sender_node))
+
+            if repeater_info:
+                # Объединяем информацию о ретрансляторе
+                repeater_str = " ".join(repeater_info)
+                parts.append(f"🔄 <b>Ретранслировал:</b> {repeater_str}")
+
         # Формируем информацию о получателе
         if self.to_node:
             recipient_info = []
@@ -293,6 +328,9 @@ class MeshtasticMessage(BaseModel):
             "from_node": self.from_node,
             "from_node_name": self.from_node_name,
             "from_node_short": self.from_node_short,
+            "sender_node": self.sender_node,
+            "sender_node_name": self.sender_node_name,
+            "sender_node_short": self.sender_node_short,
             "to_node": self.to_node,
             "text": self.text,
             "timestamp": self.timestamp,
