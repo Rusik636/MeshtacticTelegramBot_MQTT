@@ -144,6 +144,18 @@ class TelegramConfig(BaseSettings):
         default=None,
         description="Список разрешенных user_id для личных сообщений (None = все)",
     )
+    show_receive_time: bool = Field(
+        default=False,
+        description="Показывать время получения сообщения каждой нодой в группированных сообщениях",
+    )
+    message_grouping_enabled: bool = Field(
+        default=True,
+        description="Включить группировку сообщений по message_id (объединение сообщений от разных нод)",
+    )
+    message_grouping_timeout: int = Field(
+        default=30,
+        description="Таймаут группировки сообщений в секундах (после этого времени новые ноды не добавляются)",
+    )
 
     @field_validator("group_chat_id", mode="before")
     @classmethod

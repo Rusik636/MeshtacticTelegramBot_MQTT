@@ -15,6 +15,7 @@ from src.service.main_broker_service import MainBrokerService
 from src.service.message_service import MessageService
 from src.service.mqtt_proxy_service import MQTTProxyService
 from src.service.node_cache_service import NodeCacheService
+from src.service.message_grouping_service import MessageGroupingService
 from src.handlers.mqtt_handler import MQTTMessageHandlerImpl
 from src.handlers.proxy_status_handler import ProxyStatusHandler
 from src.handlers.telegram_commands import TelegramCommandsHandler
@@ -51,13 +52,20 @@ class MeshtasticTelegramBotApp:
             config.mqtt_proxy_targets, source_topic=config.mqtt_source.topic
         )
 
+        # Инициализируем сервис группировки сообщений
+        self.grouping_service = MessageGroupingService(
+            grouping_timeout_seconds=config.telegram.message_grouping_timeout
+        )
+
         # Создаем обработчик MQTT сообщений
         notify_user_ids = config.telegram.allowed_user_ids
         self.mqtt_handler = MQTTMessageHandlerImpl(
             telegram_repo=self.telegram_repo,
             proxy_service=self.proxy_service,
             message_service=self.message_service,
+            telegram_config=config.telegram,
             notify_user_ids=notify_user_ids,
+            grouping_service=self.grouping_service,
         )
 
         # Создаем обработчик статуса прокси (отдельно от основного брокера)

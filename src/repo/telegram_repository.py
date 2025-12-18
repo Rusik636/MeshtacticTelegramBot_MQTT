@@ -26,8 +26,13 @@ class TelegramRepository(ABC):
         ...
 
     @abstractmethod
-    async def send_to_group(self, text: str) -> None:
-        """Отправляет сообщение в групповой чат."""
+    async def send_to_group(self, text: str) -> Optional[int]:
+        """
+        Отправляет сообщение в групповой чат.
+
+        Returns:
+            ID отправленного сообщения в Telegram или None, если отправка не удалась
+        """
         ...
 
     @abstractmethod
@@ -38,6 +43,17 @@ class TelegramRepository(ABC):
     @abstractmethod
     def is_user_allowed(self, user_id: int) -> bool:
         """Проверяет, разрешен ли пользователь."""
+        ...
+
+    @abstractmethod
+    async def edit_message(
+        self,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        parse_mode: Optional[str] = None,
+    ) -> None:
+        """Редактирует существующее сообщение в чате."""
         ...
 
 
@@ -97,29 +113,42 @@ class AsyncTelegramRepository(TelegramRepository):
             )
             raise
 
-    async def send_to_group(self, text: str) -> None:
+    async def send_to_group(self, text: str) -> Optional[int]:
         """
         Отправляет сообщение в групповой чат (или в тему, если настроено).
 
         Args:
             text: Текст сообщения
+
+        Returns:
+            ID отправленного сообщения в Telegram или None, если отправка не удалась
         """
         if not self.config.group_chat_id:
             logger.warning("Group chat ID не настроен, пропуск отправки в группу")
-            return
+            return None
 
         try:
-            await self.send_message(
-                self.config.group_chat_id,
-                text,
-                message_thread_id=self.config.group_topic_id,
-            )
+            message_params = {
+                "chat_id": self.config.group_chat_id,
+                "text": text,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+            }
+
+            if self.config.group_topic_id is not None:
+                message_params["message_thread_id"] = self.config.group_topic_id
+
+            sent_message = await self.bot.send_message(**message_params)
+            message_id = sent_message.message_id if sent_message else None
+
             if self.config.group_topic_id:
                 logger.info(
-                    f"Отправлено сообщение в тему группы (thread_id={self.config.group_topic_id})"
+                    f"Отправлено сообщение в тему группы (thread_id={self.config.group_topic_id}, message_id={message_id})"
                 )
             else:
-                logger.info("Отправлено сообщение в групповой чат")
+                logger.info(f"Отправлено сообщение в групповой чат (message_id={message_id})")
+
+            return message_id
         except Exception as e:
             logger.error(
                 f"Ошибка при отправке сообщения в групповой чат: {e}", exc_info=True
@@ -157,3 +186,70 @@ class AsyncTelegramRepository(TelegramRepository):
         if self._allowed_user_ids is None:
             return True
         return user_id in self._allowed_user_ids
+
+    async def edit_message(
+        self,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        parse_mode: Optional[str] = "HTML",
+    ) -> None:
+        """
+        Редактирует существующее сообщение в чате.
+
+        Args:
+            chat_id: ID чата
+            message_id: ID сообщения для редактирования
+            text: Новый текст сообщения
+            parse_mode: Режим парсинга (HTML, Markdown и т.д.). По умолчанию HTML.
+        """
+        try:
+            await self.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                parse_mode=parse_mode,
+                disable_web_page_preview=True,
+            )
+            logger.debug(
+                f"Отредактировано Telegram сообщение: chat_id={chat_id}, message_id={message_id}"
+            )
+        except Exception as e:
+            logger.error(
+                f"Ошибка при редактировании Telegram сообщения: chat_id={chat_id}, message_id={message_id}, error={e}",
+                exc_info=True,
+            )
+            raise
+
+    async def edit_group_message(
+        self,
+        message_id: int,
+        text: str,
+        parse_mode: Optional[str] = "HTML",
+    ) -> None:
+        """
+        Редактирует сообщение в групповом чате (или в теме, если настроено).
+
+        Args:
+            message_id: ID сообщения для редактирования
+            text: Новый текст сообщения
+            parse_mode: Режим парсинга (HTML, Markdown и т.д.). По умолчанию HTML.
+        """
+        if not self.config.group_chat_id:
+            logger.warning("Group chat ID не настроен, пропуск редактирования сообщения")
+            return
+
+        try:
+            await self.edit_message(
+                self.config.group_chat_id,
+                message_id,
+                text,
+                parse_mode,
+            )
+            logger.info(f"Отредактировано сообщение в групповом чате: message_id={message_id}")
+        except Exception as e:
+            logger.error(
+                f"Ошибка при редактировании сообщения в групповом чате: {e}",
+                exc_info=True,
+            )
+            raise

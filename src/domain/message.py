@@ -6,7 +6,7 @@
 
 import html
 from datetime import datetime
-from typing import Optional, Dict, Any, TYPE_CHECKING
+from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
@@ -318,6 +318,221 @@ class MeshtasticMessage(BaseModel):
             parts.append("📨 Новое сообщение Meshtastic")
             if self.topic:
                 # Экранируем топик для защиты от XSS
+                escaped_topic = html.escape(self.topic)
+                parts.append(f"Топик: {escaped_topic}")
+
+        return "\n".join(parts)
+
+    def format_for_telegram_with_grouping(
+        self,
+        received_by_nodes: List[Dict[str, Any]],
+        show_receive_time: bool = False,
+        node_cache_service: Optional["NodeCacheService"] = None,
+    ) -> str:
+        """
+        Форматирует сообщение для отправки в Telegram с учетом группировки нод-получателей.
+
+        Args:
+            received_by_nodes: Список словарей с информацией о нодах-получателях
+                Каждый словарь должен содержать: node_id, node_name, node_short,
+                received_at, rssi, snr, hops_away, sender_node, sender_node_name
+            show_receive_time: Показывать ли время получения каждой нодой
+            node_cache_service: Сервис кэша нод для получения координат (опционально)
+
+        Returns:
+            Отформатированная строка сообщения с информацией о нодах-получателях.
+        """
+        # Сначала формируем основное сообщение без списка нод
+        parts = []
+
+        # Временная метка в формате чч:мм дд.мм.гггг (вверху)
+        if self.timestamp:
+            try:
+                dt = datetime.fromtimestamp(self.timestamp)
+                parts.append(f"🕐 <b>{dt.strftime('%H:%M %d.%m.%Y')}</b>")
+            except (ValueError, OSError):
+                pass
+
+        # Формируем информацию об отправителе
+        sender_info = []
+        if self.from_node_name and self.from_node_short:
+            escaped_longname = html.escape(self.from_node_name)
+            escaped_shortname = html.escape(self.from_node_short)
+            sender_info.append(f"{escaped_longname} ({escaped_shortname})")
+        elif self.from_node_name:
+            sender_info.append(html.escape(self.from_node_name))
+        elif self.from_node_short:
+            sender_info.append(html.escape(self.from_node_short))
+        elif self.from_node:
+            sender_info.append(html.escape(self.from_node))
+
+        if sender_info:
+            sender_str = " ".join(sender_info)
+            parts.append(f"\n📡 <b>От:</b> {sender_str}")
+
+        # Формируем информацию о ретрансляторе (sender)
+        sender_normalized = (
+            self.sender_node.lower() if self.sender_node else None
+        )
+        from_normalized = self.from_node.lower() if self.from_node else None
+        if sender_normalized and sender_normalized != from_normalized:
+            repeater_info = []
+            if self.sender_node_name and self.sender_node_short:
+                escaped_longname = html.escape(self.sender_node_name)
+                escaped_shortname = html.escape(self.sender_node_short)
+                repeater_info.append(f"{escaped_longname} ({escaped_shortname})")
+            elif self.sender_node_name:
+                repeater_info.append(html.escape(self.sender_node_name))
+            elif self.sender_node_short:
+                repeater_info.append(html.escape(self.sender_node_short))
+            else:
+                repeater_info.append(html.escape(self.sender_node))
+
+            if repeater_info:
+                repeater_str = " ".join(repeater_info)
+                parts.append(f"🔄 <b>Ретранслировал:</b> {repeater_str}")
+
+        # Формируем информацию о получателе
+        if self.to_node:
+            recipient_info = []
+            if self.to_node == "Всем":
+                recipient_info.append("Всем")
+            else:
+                if node_cache_service:
+                    cached_to_name = node_cache_service.get_node_name(self.to_node)
+                    cached_to_short = node_cache_service.get_node_shortname(
+                        self.to_node
+                    )
+                    if cached_to_name:
+                        recipient_info.append(html.escape(cached_to_name))
+                    elif cached_to_short:
+                        recipient_info.append(html.escape(cached_to_short))
+
+                escaped_to_node = html.escape(self.to_node)
+                if recipient_info:
+                    recipient_info.append(f"({escaped_to_node})")
+                else:
+                    recipient_info.append(escaped_to_node)
+
+            if recipient_info:
+                recipient_str = " ".join(recipient_info)
+                parts.append(f"📨 <b>Кому:</b> {recipient_str}\n")
+
+        # Информация о ретрансляции
+        if self.hops_away is not None:
+            if self.hops_away == 0:
+                parts.append("📬 Прямая доставка")
+            else:
+                parts.append(f"🔄 Ретранслировано {self.hops_away} раз")
+
+        # Качество сигнала (RSSI и SNR с отдельными индикаторами)
+        signal_parts = []
+        if self.rssi is not None:
+            rssi_emoji = self.get_rssi_quality_emoji(self.rssi)
+            signal_parts.append(f"{rssi_emoji} RSSI: {self.rssi} dBm")
+
+        if self.snr is not None:
+            snr_emoji = self.get_snr_quality_emoji(self.snr)
+            signal_parts.append(f"{snr_emoji} SNR: {self.snr:.1f} dB")
+
+        if signal_parts:
+            parts.append(f"📶 {' | '.join(signal_parts)}")
+
+        # Местоположение отправителя и получателя
+        location_parts = []
+        if node_cache_service and self.from_node:
+            sender_position = node_cache_service.get_node_position(self.from_node)
+            if sender_position:
+                latitude, longitude, altitude = sender_position
+                yandex_map_url = (
+                    f"https://yandex.ru/maps/?pt={longitude},{latitude}&z=15&l=map"
+                )
+                location_parts.append(f'📍 <a href="{yandex_map_url}">Отправитель</a>')
+            else:
+                location_parts.append("📍 Отправитель: Не известно")
+        else:
+            location_parts.append("📍 Отправитель: Не известно")
+
+        if self.to_node and self.to_node != "Всем":
+            if node_cache_service:
+                recipient_position = node_cache_service.get_node_position(self.to_node)
+                if recipient_position:
+                    latitude, longitude, altitude = recipient_position
+                    yandex_map_url = (
+                        f"https://yandex.ru/maps/?pt={longitude},{latitude}&z=15&l=map"
+                    )
+                    location_parts.append(
+                        f'📍 <a href="{yandex_map_url}">Получатель</a>'
+                    )
+                else:
+                    location_parts.append("📍 Получатель: Не известно")
+            else:
+                location_parts.append("📍 Получатель: Не известно")
+
+        if location_parts:
+            parts.append(" | ".join(location_parts))
+
+        # Текст сообщения
+        if self.text:
+            escaped_text = html.escape(self.text)
+            parts.append(
+                f"\n💬 <b>Сообщение:</b>\n<blockquote>{escaped_text}</blockquote>"
+            )
+
+        # Добавляем информацию о нодах-получателях
+        if received_by_nodes:
+            parts.append("\n" + "━" * 25)
+            parts.append("📥 <b>Получено нодами:</b>")
+
+            for node_info in received_by_nodes:
+                node_parts = []
+                node_parts.append("  • ")
+
+                # Имя ноды
+                node_name = node_info.get("node_name")
+                node_short = node_info.get("node_short")
+                node_id = node_info.get("node_id", "")
+
+                if node_name and node_short:
+                    escaped_name = html.escape(node_name)
+                    escaped_short = html.escape(node_short)
+                    node_parts.append(f"{escaped_name} ({escaped_short})")
+                elif node_name:
+                    node_parts.append(html.escape(node_name))
+                elif node_short:
+                    node_parts.append(html.escape(node_short))
+                else:
+                    node_parts.append(html.escape(node_id))
+
+                # Время получения (если включено)
+                if show_receive_time:
+                    received_at = node_info.get("received_at")
+                    if received_at:
+                        if isinstance(received_at, datetime):
+                            time_str = received_at.strftime("%H:%M:%S")
+                        elif isinstance(received_at, str):
+                            try:
+                                dt = datetime.fromisoformat(received_at.replace("Z", "+00:00"))
+                                time_str = dt.strftime("%H:%M:%S")
+                            except (ValueError, AttributeError):
+                                time_str = str(received_at)
+                        else:
+                            time_str = str(received_at)
+                        node_parts.append(f" ({time_str})")
+
+                # Качество сигнала
+                rssi = node_info.get("rssi")
+                if rssi is not None:
+                    rssi_emoji = self.get_rssi_quality_emoji(rssi)
+                    node_parts.append(f" {rssi_emoji} {rssi} dBm")
+
+                parts.append("".join(node_parts))
+
+            parts.append("━" * 25)
+
+        if not parts:
+            parts.append("📨 Новое сообщение Meshtastic")
+            if self.topic:
                 escaped_topic = html.escape(self.topic)
                 parts.append(f"Топик: {escaped_topic}")
 
