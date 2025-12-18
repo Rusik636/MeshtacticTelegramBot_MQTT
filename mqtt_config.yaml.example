@@ -57,3 +57,28 @@ mqtt_proxy_targets:
   #   tls: true
   #   tls_insecure: true  # Отключить проверку для самоподписанного сертификата
 
+  # Конфигурация обработки сообщений
+message_processing:
+  # Режим обработки по умолчанию (используется если не определен из топика)
+  # Возможные значения: private, group, all
+  default_mode: group
+  
+  # Настройки режима GROUP
+  group_mode_send_to_users: false  # Отправлять личные сообщения в режиме GROUP
+  
+  # Конфигурация обработчиков (можно легко добавлять новые)
+  handlers:
+    proxy:
+      enabled: true
+      priority: 0  # Порядок выполнения (меньше = раньше)
+    
+    telegram:
+      enabled: true
+      priority: 1
+    
+    # Пример: легко добавить новый обработчик
+    # logging:
+    #   enabled: true
+    #   priority: 2
+    #   log_file: "messages.log"
+
