@@ -339,7 +339,10 @@ class AllModeStrategy(MessageProcessingStrategy):
         notify_user_ids: Optional[List[int]] = None,
     ) -> None:
         """
-        Отправляет все типы сообщений в группу и пользователям.
+        Отправляет сообщения в группу и пользователям.
+        
+        В группу отправляются только текстовые сообщения.
+        Служебные сообщения (nodeinfo, position, telemetry и т.д.) отправляются только в личные чаты пользователей.
 
         Args:
             message: Сообщение для обработки
@@ -353,22 +356,23 @@ class AllModeStrategy(MessageProcessingStrategy):
             telegram_text = message.format_for_telegram(
                 node_cache_service=self.node_cache_service
             )
+            
+            # Текстовые сообщения отправляем в группу
+            try:
+                await telegram_repo.send_to_group(telegram_text)
+                logger.info(
+                    f"Отправлено текстовое сообщение в группу (режим ALL)"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Ошибка при отправке в группу: {e}", exc_info=True
+                )
         else:
-            # Для других типов - специальное форматирование
+            # Для служебных сообщений - специальное форматирование
             telegram_text = self._format_non_text_message(message)
+            # Служебные сообщения НЕ отправляем в группу
 
-        # Отправляем в группу
-        try:
-            await telegram_repo.send_to_group(telegram_text)
-            logger.info(
-                f"Отправлено сообщение типа {message.message_type} в группу (режим ALL)"
-            )
-        except Exception as e:
-            logger.error(
-                f"Ошибка при отправке в группу: {e}", exc_info=True
-            )
-
-        # Отправляем пользователям
+        # Отправляем пользователям (и текстовые, и служебные)
         if notify_user_ids:
             for user_id in notify_user_ids:
                 if telegram_repo.is_user_allowed(user_id):
