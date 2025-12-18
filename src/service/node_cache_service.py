@@ -157,40 +157,49 @@ class NodeCacheService:
         force: bool = False,
     ) -> bool:
         """
-        Обновляет информацию о ноде (обновляет раз в 3 дня, или при force=True).
+        Обновляет информацию о ноде.
+        
+        Имена всегда обновляются в памяти (если предоставлены).
+        На диск сохраняется только раз в 3 дня (или при force=True).
 
         Args:
             node_id: ID ноды (например, !698535e0)
             longname: Полное название ноды
             shortname: Короткое имя ноды
-            force: Принудительное обновление (игнорирует интервал)
+            force: Принудительное сохранение на диск (игнорирует интервал)
 
         Returns:
-            True, если информация была обновлена, False если пропущена
+            True, если информация была обновлена, False если пропущено сохранение на диск
         """
         existing_node = self._cache.get(node_id)
 
-        # Проверяем, нужно ли обновлять
+        # Определяем, нужно ли сохранять на диск
+        should_save_to_disk = force
+
         if existing_node and not force:
             time_since_update = datetime.utcnow() - existing_node.last_updated
-            if time_since_update < timedelta(days=self.update_interval_days):
-                logger.debug(
-                    f"Пропущено обновление ноды {node_id}: "
-                    f"последнее обновление {time_since_update.days} дней назад"
-                )
-                return False
+            if time_since_update >= timedelta(days=self.update_interval_days):
+                should_save_to_disk = True
+        else:
+            # Если ноды еще нет, всегда сохраняем на диск
+            should_save_to_disk = True
 
         # Обновляем или создаем новую запись
         if existing_node:
-            # Обновляем существующую запись
-            if longname:
+            # Обновляем существующую запись в памяти
+            # Обновляем имена, если они предоставлены (даже если None - это может быть явное удаление)
+            if longname is not None:
                 existing_node.longname = longname
-            if shortname:
+            if shortname is not None:
                 existing_node.shortname = shortname
-            existing_node.last_updated = datetime.utcnow()
-            logger.info(
-                f"Обновлена информация о ноде: {node_id} ({longname or shortname or 'без имени'})"
-            )
+            
+            # Обновляем время последнего обновления только если действительно обновили данные
+            if longname is not None or shortname is not None:
+                existing_node.last_updated = datetime.utcnow()
+                logger.info(
+                    f"Обновлена информация о ноде в кэше: {node_id} "
+                    f"(longname={longname}, shortname={shortname})"
+                )
         else:
             # Создаем новую запись
             new_node = NodeInfo(
@@ -203,10 +212,18 @@ class NodeCacheService:
             logger.info(
                 f"Добавлена новая нода в кэш: {node_id} ({longname or shortname or 'без имени'})"
             )
+            should_save_to_disk = True
 
-        # Сохраняем на диск
-        self.save_cache()
-        return True
+        # Сохраняем на диск, если нужно
+        if should_save_to_disk:
+            self.save_cache()
+            logger.debug(f"Сохранена информация о ноде на диск: {node_id}")
+            return True
+        else:
+            logger.debug(
+                f"Информация о ноде обновлена только в кэше (не сохраняем на диск): {node_id}"
+            )
+            return False
 
     def update_node_position(
         self,
