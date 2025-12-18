@@ -438,51 +438,10 @@ class MeshtasticMessage(BaseModel):
         if signal_parts:
             parts.append(f"📶 {' | '.join(signal_parts)}")
 
-        # Местоположение отправителя и получателя
-        location_parts = []
-        if node_cache_service and self.from_node:
-            sender_position = node_cache_service.get_node_position(self.from_node)
-            if sender_position:
-                latitude, longitude, altitude = sender_position
-                yandex_map_url = (
-                    f"https://yandex.ru/maps/?pt={longitude},{latitude}&z=15&l=map"
-                )
-                location_parts.append(f'📍 <a href="{yandex_map_url}">Отправитель</a>')
-            else:
-                location_parts.append("📍 Отправитель: Не известно")
-        else:
-            location_parts.append("📍 Отправитель: Не известно")
-
-        if self.to_node and self.to_node != "Всем":
-            if node_cache_service:
-                recipient_position = node_cache_service.get_node_position(self.to_node)
-                if recipient_position:
-                    latitude, longitude, altitude = recipient_position
-                    yandex_map_url = (
-                        f"https://yandex.ru/maps/?pt={longitude},{latitude}&z=15&l=map"
-                    )
-                    location_parts.append(
-                        f'📍 <a href="{yandex_map_url}">Получатель</a>'
-                    )
-                else:
-                    location_parts.append("📍 Получатель: Не известно")
-            else:
-                location_parts.append("📍 Получатель: Не известно")
-
-        if location_parts:
-            parts.append(" | ".join(location_parts))
-
-        # Текст сообщения
-        if self.text:
-            escaped_text = html.escape(self.text)
-            parts.append(
-                f"\n💬 <b>Сообщение:</b>\n<blockquote>{escaped_text}</blockquote>"
-            )
-
         # Добавляем информацию о нодах-получателях
         if received_by_nodes:
-            parts.append("\n" + "━" * 25)
-            parts.append("📥 <b>Получено нодами:</b>")
+            separator_length = 10
+            parts.append("\n📥 <b>Получено нодами:</b>")
 
             for node_info in received_by_nodes:
                 node_parts = []
@@ -528,7 +487,48 @@ class MeshtasticMessage(BaseModel):
 
                 parts.append("".join(node_parts))
 
-            parts.append("━" * 25)
+            parts.append("\n")
+
+        # Местоположение отправителя и получателя
+        location_parts = []
+        if node_cache_service and self.from_node:
+            sender_position = node_cache_service.get_node_position(self.from_node)
+            if sender_position:
+                latitude, longitude, altitude = sender_position
+                yandex_map_url = (
+                    f"https://yandex.ru/maps/?pt={longitude},{latitude}&z=15&l=map"
+                )
+                location_parts.append(f'📍 <a href="{yandex_map_url}">Отправитель</a>')
+            else:
+                location_parts.append("📍 Отправитель: Не известно")
+        else:
+            location_parts.append("📍 Отправитель: Не известно")
+
+        if self.to_node and self.to_node != "Всем":
+            if node_cache_service:
+                recipient_position = node_cache_service.get_node_position(self.to_node)
+                if recipient_position:
+                    latitude, longitude, altitude = recipient_position
+                    yandex_map_url = (
+                        f"https://yandex.ru/maps/?pt={longitude},{latitude}&z=15&l=map"
+                    )
+                    location_parts.append(
+                        f'📍 <a href="{yandex_map_url}">Получатель</a>'
+                    )
+                else:
+                    location_parts.append("📍 Получатель: Не известно")
+            else:
+                location_parts.append("📍 Получатель: Не известно")
+
+        if location_parts:
+            parts.append(" | ".join(location_parts))
+
+        # Текст сообщения
+        if self.text:
+            escaped_text = html.escape(self.text)
+            parts.append(
+                f"\n💬 <b>Сообщение:</b>\n<blockquote>{escaped_text}</blockquote>"
+            )
 
         if not parts:
             parts.append("📨 Новое сообщение Meshtastic")
