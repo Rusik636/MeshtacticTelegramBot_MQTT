@@ -159,29 +159,63 @@ class MQTTProxyTarget:
                 else message.topic
             )
 
+            # Сохраняем оригинальный топик для логирования
+            original_topic = topic
+
             # Удаляем префикс исходного топика (например, "msh/" из "msh/#")
+            # Важно: удаляем только базовый префикс подписки, не весь путь
             if self.source_topic:
                 source_prefix = self._normalize_source_topic(self.source_topic)
                 if source_prefix and topic.startswith(source_prefix):
                     # Удаляем префикс исходного топика
                     topic = topic[len(source_prefix) :]
-                    # Убираем ведущий слэш, если он есть
+                    # Убираем ведущие слэши, если они есть
                     topic = topic.lstrip("/")
                     logger.debug(
                         f"Удален префикс исходного топика: source_prefix={source_prefix}, "
-                        f"remaining_topic={topic}"
+                        f"original_topic={original_topic}, remaining_topic={topic}"
+                    )
+                else:
+                    # Если топик не начинается с префикса, логируем предупреждение
+                    logger.warning(
+                        f"Топик не начинается с префикса подписки: topic={topic}, "
+                        f"source_prefix={source_prefix}, source_topic={self.source_topic}"
                     )
 
             # Добавляем префикс прокси, если задан
             if self.config.topic_prefix:
                 # Убираем завершающий слэш из префикса прокси, если есть
                 proxy_prefix = self.config.topic_prefix.rstrip("/")
+                
+                # Проверяем, не содержит ли topic_prefix часть пути, которая уже есть в topic
+                # Это предотвращает дублирование (например, если topic_prefix="msh/RU/NCH",
+                # а topic после удаления префикса = "RU/NCH/group/...", то нужно удалить "RU/NCH/")
+                if proxy_prefix and topic:
+                    # Нормализуем proxy_prefix для сравнения (убираем базовый префикс, если он есть)
+                    proxy_prefix_normalized = proxy_prefix
+                    if self.source_topic:
+                        source_prefix = self._normalize_source_topic(self.source_topic)
+                        if source_prefix and proxy_prefix.startswith(source_prefix):
+                            # Удаляем базовый префикс из proxy_prefix для сравнения
+                            proxy_prefix_normalized = proxy_prefix[len(source_prefix) :].lstrip("/")
+                    
+                    # Если topic начинается с proxy_prefix_normalized, удаляем эту часть
+                    if proxy_prefix_normalized and topic.startswith(proxy_prefix_normalized):
+                        topic = topic[len(proxy_prefix_normalized) :].lstrip("/")
+                        logger.debug(
+                            f"Удалена дублирующаяся часть из topic: "
+                            f"proxy_prefix_normalized={proxy_prefix_normalized}, "
+                            f"remaining_topic={topic}"
+                        )
+                
+                # Добавляем префикс прокси
                 if topic:
                     topic = f"{proxy_prefix}/{topic}"
                 else:
                     topic = proxy_prefix
                 logger.debug(
-                    f"Добавлен префикс прокси: proxy_prefix={proxy_prefix}, final_topic={topic}"
+                    f"Добавлен префикс прокси: proxy_prefix={proxy_prefix}, "
+                    f"final_topic={topic}, original_topic={original_topic}"
                 )
 
             # Публикуем исходный payload в сыром виде

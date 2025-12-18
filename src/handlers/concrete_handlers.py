@@ -24,6 +24,7 @@ class ProxyHandler(MessageHandler):
     def __init__(
         self,
         proxy_service: "MQTTProxyService",
+        topic_routing_service: Optional["TopicRoutingService"] = None,
         config: Optional[HandlerConfig] = None,
     ):
         """
@@ -31,10 +32,12 @@ class ProxyHandler(MessageHandler):
 
         Args:
             proxy_service: Сервис MQTT прокси
+            topic_routing_service: Сервис определения режима из топика (для фильтрации приватных сообщений)
             config: Конфигурация обработчика
         """
         super().__init__(config)
         self.proxy_service = proxy_service
+        self.topic_routing_service = topic_routing_service
 
     async def _process(self, topic: str, payload: bytes) -> None:
         """
@@ -44,6 +47,17 @@ class ProxyHandler(MessageHandler):
             topic: MQTT топик сообщения
             payload: Данные сообщения в байтах
         """
+        # Проверяем режим из топика - приватные сообщения не проксируем
+        if self.topic_routing_service:
+            routing_mode, _ = self.topic_routing_service.get_effective_mode(topic)
+            from src.service.topic_routing_service import RoutingMode
+
+            if routing_mode == RoutingMode.PRIVATE:
+                logger.debug(
+                    f"Пропущено проксирование приватного сообщения: topic={topic}"
+                )
+                return
+
         # Создаем минимальный объект сообщения только с исходными данными
         proxy_message = MeshtasticMessage(
             topic=topic,

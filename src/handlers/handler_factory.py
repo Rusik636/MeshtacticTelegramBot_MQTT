@@ -118,8 +118,8 @@ class HandlerChainFactory:
                 # Получаем зависимости для этого обработчика
                 handler_deps = dependencies.get(handler_name, {})
 
-                # Для TelegramHandler добавляем topic_routing_service
-                if handler_name == "telegram" and topic_routing_service:
+                # Для TelegramHandler и ProxyHandler добавляем topic_routing_service
+                if handler_name in ("telegram", "proxy") and topic_routing_service:
                     handler_deps["topic_routing_service"] = topic_routing_service
 
                 # Создаем обработчик
