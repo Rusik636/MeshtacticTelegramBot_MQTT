@@ -15,7 +15,11 @@ from src.service.main_broker_service import MainBrokerService
 from src.service.message_service import MessageService
 from src.service.mqtt_proxy_service import MQTTProxyService
 from src.service.node_cache_service import NodeCacheService
-from src.handlers.mqtt_handler import MQTTMessageHandlerImpl
+from src.service.message_grouping_service import MessageGroupingService
+from src.service.topic_routing_service import TopicRoutingService, RoutingMode
+from src.service.message_processing_strategy import ProcessingMode
+from src.handlers.handler_factory import HandlerChainFactory
+from src.handlers.message_handler_adapter import MessageHandlerAdapter
 from src.handlers.proxy_status_handler import ProxyStatusHandler
 from src.handlers.telegram_commands import TelegramCommandsHandler
 
@@ -51,14 +55,57 @@ class MeshtasticTelegramBotApp:
             config.mqtt_proxy_targets, source_topic=config.mqtt_source.topic
         )
 
-        # Создаем обработчик MQTT сообщений
-        notify_user_ids = config.telegram.allowed_user_ids
-        self.mqtt_handler = MQTTMessageHandlerImpl(
-            telegram_repo=self.telegram_repo,
-            proxy_service=self.proxy_service,
-            message_service=self.message_service,
-            notify_user_ids=notify_user_ids,
+        # Инициализируем сервис группировки сообщений
+        self.grouping_service = MessageGroupingService(
+            grouping_timeout_seconds=config.telegram.message_grouping_timeout
         )
+
+        # Инициализируем сервис определения режима из топика
+        default_routing_mode = RoutingMode.ALL
+        if config.message_processing.default_mode == "private":
+            default_routing_mode = RoutingMode.PRIVATE
+        elif config.message_processing.default_mode == "group":
+            default_routing_mode = RoutingMode.GROUP
+        self.topic_routing_service = TopicRoutingService(
+            default_mode=default_routing_mode
+        )
+
+        # Создаем стратегию обработки по умолчанию
+        default_processing_mode = ProcessingMode.GROUP
+        if config.message_processing.default_mode == "private":
+            default_processing_mode = ProcessingMode.PRIVATE
+        elif config.message_processing.default_mode == "all":
+            default_processing_mode = ProcessingMode.ALL
+
+        default_strategy = HandlerChainFactory.create_strategy(
+            mode=default_processing_mode,
+            send_to_users=config.message_processing.group_mode_send_to_users,
+            node_cache_service=self.node_cache_service,
+            grouping_service=self.grouping_service,
+            telegram_config=config.telegram,
+        )
+
+        # Создаем зависимости для обработчиков
+        notify_user_ids = config.telegram.allowed_user_ids
+        handler_dependencies = {
+            "proxy": {"proxy_service": self.proxy_service},
+            "telegram": {
+                "strategy": default_strategy,
+                "telegram_repo": self.telegram_repo,
+                "message_service": self.message_service,
+                "notify_user_ids": notify_user_ids,
+            },
+        }
+
+        # Создаем цепочку обработчиков через фабрику
+        handler_chain = HandlerChainFactory.create_chain(
+            handlers_config=config.message_processing.handlers,
+            dependencies=handler_dependencies,
+            topic_routing_service=self.topic_routing_service,
+        )
+
+        # Обертываем в адаптер для совместимости с существующим интерфейсом
+        self.mqtt_handler = MessageHandlerAdapter(handler_chain)
 
         # Создаем обработчик статуса прокси (отдельно от основного брокера)
         proxy_status_handler = ProxyStatusHandler(self.proxy_service)

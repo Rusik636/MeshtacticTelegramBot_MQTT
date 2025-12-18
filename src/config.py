@@ -144,6 +144,18 @@ class TelegramConfig(BaseSettings):
         default=None,
         description="Список разрешенных user_id для личных сообщений (None = все)",
     )
+    show_receive_time: bool = Field(
+        default=False,
+        description="Показывать время получения сообщения каждой нодой в группированных сообщениях",
+    )
+    message_grouping_enabled: bool = Field(
+        default=True,
+        description="Включить группировку сообщений по message_id (объединение сообщений от разных нод)",
+    )
+    message_grouping_timeout: int = Field(
+        default=30,
+        description="Таймаут группировки сообщений в секундах (после этого времени новые ноды не добавляются)",
+    )
 
     @field_validator("group_chat_id", mode="before")
     @classmethod
@@ -243,6 +255,43 @@ class TelegramConfig(BaseSettings):
         return None
 
 
+class MessageProcessingConfig(BaseSettings):
+    """Конфигурация обработки сообщений."""
+
+    model_config = SettingsConfigDict(env_prefix="MESSAGE_PROCESSING_")
+
+    # Режим обработки по умолчанию (используется если не определен из топика)
+    default_mode: str = Field(
+        default="group",
+        description="Режим обработки по умолчанию: private, group, all",
+    )
+
+    # Настройки обработчиков (можно легко добавлять новые)
+    handlers: Dict[str, Dict[str, Any]] = Field(
+        default_factory=lambda: {
+            "proxy": {"enabled": True, "priority": 0},
+            "telegram": {"enabled": True, "priority": 1},
+        },
+        description="Конфигурация обработчиков",
+    )
+
+    # Дополнительные опции для режимов
+    group_mode_send_to_users: bool = Field(
+        default=False,
+        description="Отправлять личные сообщения в режиме GROUP",
+    )
+
+    @field_validator("default_mode")
+    @classmethod
+    def validate_default_mode(cls, v: str) -> str:
+        """Валидация режима обработки."""
+        allowed = {"private", "group", "all"}
+        value = v.lower().strip()
+        if value not in allowed:
+            raise ValueError(f"default_mode должен быть одним из {allowed}")
+        return value
+
+
 class AppConfig(BaseSettings):
     """Основная конфигурация приложения."""
 
@@ -261,6 +310,11 @@ class AppConfig(BaseSettings):
     # Используем default_factory для автоматической загрузки из переменных
     # окружения
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
+
+    # Обработка сообщений
+    message_processing: MessageProcessingConfig = Field(
+        default_factory=MessageProcessingConfig
+    )
 
     # MQTT прокси (список целей)
     # По умолчанию загружается одна цель из переменных окружения с префиксом MQTT_PROXY_TARGET_
@@ -353,6 +407,18 @@ class AppConfig(BaseSettings):
                         logging.info(
                             f"Загружено {len(proxy_targets)} прокси-целей из YAML"
                         )
+
+            # Загружаем message_processing из YAML
+            if "message_processing" in yaml_data:
+                message_processing_data = yaml_data["message_processing"]
+                # Обновляем конфигурацию, используя значения из YAML
+                # Переменные окружения имеют приоритет (уже загружены в config)
+                for key, value in message_processing_data.items():
+                    if hasattr(config.message_processing, key) and not os.getenv(
+                        f"MESSAGE_PROCESSING_{key.upper()}"
+                    ):
+                        setattr(config.message_processing, key, value)
+                logging.info("Загружена конфигурация message_processing из YAML")
 
         except yaml.YAMLError as e:
             logging.error(f"Ошибка при парсинге YAML файла {yaml_path}: {e}")

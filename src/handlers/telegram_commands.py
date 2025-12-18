@@ -13,6 +13,7 @@ from telebot.async_telebot import AsyncTeleBot
 
 from src.repo.telegram_repository import TelegramRepository
 from src.handlers.proxy_status_handler import ProxyStatusHandler
+from src.service.topic_routing_service import TopicRoutingService, RoutingMode
 
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ class TelegramCommandsHandler:
         bot: AsyncTeleBot,
         telegram_repo: TelegramRepository,
         proxy_status_handler: Optional[ProxyStatusHandler] = None,
+        topic_routing_service: Optional[TopicRoutingService] = None,
     ):
         """
         Регистрирует обработчики команд.
@@ -34,10 +36,12 @@ class TelegramCommandsHandler:
             bot: Экземпляр Telegram бота
             telegram_repo: Репозиторий для работы с Telegram
             proxy_status_handler: Обработчик статуса прокси (опционально)
+            topic_routing_service: Сервис роутинга по топикам (опционально)
         """
         self.bot = bot
         self.telegram_repo = telegram_repo
         self.proxy_status_handler = proxy_status_handler
+        self.topic_routing_service = topic_routing_service
         self._register_handlers()
 
     def _register_handlers(self) -> None:
@@ -72,6 +76,11 @@ class TelegramCommandsHandler:
         @self.bot.message_handler(commands=["get_topic_id"])
         async def handle_get_topic_id(message: types.Message):
             await self._handle_get_topic_id(message)
+
+        # Команда /mode
+        @self.bot.message_handler(commands=["mode"])
+        async def handle_mode(message: types.Message):
+            await self._handle_mode(message)
 
         # Обработка всех остальных сообщений
         @self.bot.message_handler(func=lambda m: True)
@@ -125,9 +134,18 @@ class TelegramCommandsHandler:
             f"Команда /help от пользователя: user_id={message.from_user.id}, "
             f"username=@{message.from_user.username if message.from_user.username else 'N/A'}"
         )
-        logger.info(
-            "Доступные команды: /start, /help, /status, /info, /get_chat_id, /get_topic_id"
+        help_text = (
+            "📋 <b>Доступные команды:</b>\n\n"
+            "/start - Начать работу с ботом\n"
+            "/help - Показать эту справку\n"
+            "/status - Статус бота и подключений\n"
+            "/info - Подробная информация о конфигурации\n"
+            "/get_chat_id - Получить ID чата\n"
+            "/get_topic_id - Получить ID темы форума\n"
+            "/mode - Управление режимом обработки сообщений\n\n"
+            "Используйте /mode для настройки режима работы бота."
         )
+        await self.bot.reply_to(message, help_text, parse_mode="HTML")
 
     async def _handle_status(self, message: types.Message) -> None:
         """Обрабатывает команду /status."""
@@ -278,6 +296,103 @@ class TelegramCommandsHandler:
             f"TELEGRAM_GROUP_CHAT_ID={chat.id}, "
             f"TELEGRAM_GROUP_TOPIC_ID={topic_id}"
         )
+
+    async def _handle_mode(self, message: types.Message) -> None:
+        """Обрабатывает команду /mode для управления режимом обработки сообщений."""
+        if not await self._check_user_allowed(message):
+            return
+
+        if not self.topic_routing_service:
+            await self.bot.reply_to(
+                message,
+                "❌ Сервис роутинга не инициализирован. "
+                "Обратитесь к администратору.",
+            )
+            return
+
+        user_id = message.from_user.id
+        args = message.text.split()[1:] if len(message.text.split()) > 1 else []
+
+        if not args:
+            # Показываем текущий режим
+            current_mode = self.topic_routing_service.get_user_mode(user_id)
+            if current_mode:
+                mode_name = {
+                    RoutingMode.ALL: "Все пакеты",
+                    RoutingMode.PRIVATE: "Только личные",
+                    RoutingMode.GROUP: "Только группа",
+                    RoutingMode.PRIVATE_GROUP: "Личные + группа",
+                }.get(current_mode, current_mode.value)
+                mode_text = f"Текущий режим: <b>{mode_name}</b> (переопределен)"
+            else:
+                mode_text = "Текущий режим: <b>по умолчанию</b> (определяется из топика MQTT)"
+
+            help_text = (
+                f"{mode_text}\n\n"
+                "📋 <b>Доступные режимы:</b>\n\n"
+                "/mode all - Все пакеты (включая прокси и все типы сообщений)\n"
+                "/mode private - Только личные сообщения в чат с ботом\n"
+                "/mode group - Только сообщения в групповой чат\n"
+                "/mode both - Личные сообщения + групповой чат\n"
+                "/mode reset - Сбросить переопределение (использовать режим из топика)\n\n"
+                "💡 <b>Примечание:</b> Режим из топика MQTT имеет приоритет, "
+                "если не установлено переопределение через команду.\n\n"
+                "📡 <b>Структура топиков:</b>\n"
+                "• msh/# - режим ALL\n"
+                "• msh/private/{ваш_tg_id}/# - режим PRIVATE\n"
+                "• msh/group/# - режим GROUP\n"
+                "• msh/private/{ваш_tg_id}/group/# - режим PRIVATE_GROUP"
+            )
+            await self.bot.reply_to(message, help_text, parse_mode="HTML")
+            logger.info(f"Команда /mode (просмотр) от user_id={user_id}")
+            return
+
+        mode_str = args[0].lower()
+        mode_map = {
+            "all": RoutingMode.ALL,
+            "private": RoutingMode.PRIVATE,
+            "group": RoutingMode.GROUP,
+            "both": RoutingMode.PRIVATE_GROUP,
+            "reset": None,  # Специальное значение для сброса
+        }
+
+        if mode_str not in mode_map:
+            await self.bot.reply_to(
+                message,
+                "❌ Неизвестный режим.\n\n"
+                "Используйте: all, private, group, both или reset",
+            )
+            return
+
+        if mode_str == "reset":
+            # Сбрасываем переопределение
+            self.topic_routing_service.clear_user_mode(user_id)
+            await self.bot.reply_to(
+                message,
+                "✅ Переопределение режима сброшено.\n\n"
+                "Теперь будет использоваться режим из топика MQTT.",
+            )
+            logger.info(f"Сброшен режим для user_id={user_id}")
+        else:
+            # Устанавливаем режим
+            mode = mode_map[mode_str]
+            self.topic_routing_service.set_user_mode(user_id, mode)
+            mode_name = {
+                RoutingMode.ALL: "Все пакеты",
+                RoutingMode.PRIVATE: "Только личные",
+                RoutingMode.GROUP: "Только группа",
+                RoutingMode.PRIVATE_GROUP: "Личные + группа",
+            }.get(mode, mode.value)
+
+            await self.bot.reply_to(
+                message,
+                f"✅ Режим изменен на: <b>{mode_name}</b>\n\n"
+                "Этот режим будет использоваться для всех ваших сообщений, "
+                "независимо от топика, в который публикует нода.\n\n"
+                "Используйте /mode reset для возврата к режиму из топика.",
+                parse_mode="HTML",
+            )
+            logger.info(f"Установлен режим {mode} для user_id={user_id}")
 
     async def _handle_unknown(self, message: types.Message) -> None:
         """Обрабатывает неизвестные сообщения."""

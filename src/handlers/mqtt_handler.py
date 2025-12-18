@@ -17,6 +17,8 @@ from src.repo.mqtt_repository import MQTTMessageHandler
 from src.repo.telegram_repository import TelegramRepository
 from src.service.message_service import MessageService
 from src.service.mqtt_proxy_service import MQTTProxyService
+from src.service.message_grouping_service import MessageGroupingService
+from src.config import TelegramConfig
 
 
 logger = logging.getLogger(__name__)
@@ -98,7 +100,9 @@ class MainBrokerMessageHandler(BaseMQTTMessageHandler):
         self,
         telegram_repo: TelegramRepository,
         message_service: MessageService,
+        telegram_config: TelegramConfig,
         notify_user_ids: Optional[List[int]] = None,
+        grouping_service: Optional[MessageGroupingService] = None,
     ):
         """
         Сохраняет зависимости для парсинга и отправки в Telegram.
@@ -106,12 +110,17 @@ class MainBrokerMessageHandler(BaseMQTTMessageHandler):
         Args:
             telegram_repo: Репозиторий для работы с Telegram
             message_service: Сервис обработки сообщений
+            telegram_config: Конфигурация Telegram
             notify_user_ids: Список user_id для уведомлений (None = все разрешенные)
+            grouping_service: Сервис группировки сообщений (опционально)
         """
         self.telegram_repo = telegram_repo
         self.message_service = message_service
+        self.telegram_config = telegram_config
         self.notify_user_ids = notify_user_ids
         self.payload_format = getattr(message_service, "payload_format", "json")
+        self.grouping_service = grouping_service
+        self._sent_message_ids: Dict[str, int] = {}  # message_id -> telegram_message_id
 
     async def _process_message(self, topic: str, payload: bytes) -> None:
         """
@@ -144,19 +153,130 @@ class MainBrokerMessageHandler(BaseMQTTMessageHandler):
         if message.message_type != "text":
             return
 
-        # Форматируем для Telegram
-        telegram_text = message.format_for_telegram(
-            node_cache_service=self.message_service.node_cache_service
-        )
+        # Извлекаем ноду-получателя из топика (например, msh/2/json/!12345678)
+        receiver_node_id = None
+        topic_parts = topic.split("/")
+        if len(topic_parts) >= 4:
+            potential_node_id = topic_parts[-1]
+            if potential_node_id.startswith("!"):
+                receiver_node_id = potential_node_id
 
-        # Отправляем в групповой чат
-        try:
-            await self.telegram_repo.send_to_group(telegram_text)
-        except Exception as e:
-            logger.error(f"Ошибка при отправке в группу: {e}", exc_info=True)
+        # Обработка группировки сообщений
+        if (
+            self.grouping_service
+            and self.telegram_config.message_grouping_enabled
+            and message.message_id
+        ):
+            # Добавляем ноду-получателя в группу
+            node_added = self.grouping_service.add_received_node(
+                message_id=message.message_id,
+                message=message,
+                receiver_node_id=receiver_node_id,
+                node_cache_service=self.message_service.node_cache_service,
+            )
 
-        # Отправляем пользователям
+            group = self.grouping_service.get_group(message.message_id)
+            if group:
+                # Проверяем, есть ли уже telegram_message_id
+                if group.telegram_message_id is None:
+                    # Первое сообщение - отправляем новое
+                    received_by_nodes = [
+                        {
+                            "node_id": node.node_id,
+                            "node_name": node.node_name,
+                            "node_short": node.node_short,
+                            "received_at": node.received_at,
+                            "rssi": node.rssi,
+                            "snr": node.snr,
+                            "hops_away": node.hops_away,
+                            "sender_node": node.sender_node,
+                            "sender_node_name": node.sender_node_name,
+                        }
+                        for node in group.get_unique_nodes()
+                    ]
+
+                    telegram_text = message.format_for_telegram_with_grouping(
+                        received_by_nodes=received_by_nodes,
+                        show_receive_time=self.telegram_config.show_receive_time,
+                        node_cache_service=self.message_service.node_cache_service,
+                    )
+
+                    try:
+                        telegram_message_id = await self.telegram_repo.send_to_group(
+                            telegram_text
+                        )
+                        if telegram_message_id:
+                            group.telegram_message_id = telegram_message_id
+                            self._sent_message_ids[message.message_id] = telegram_message_id
+                            logger.info(
+                                f"Отправлено новое группированное сообщение: message_id={message.message_id}, telegram_message_id={telegram_message_id}"
+                            )
+                    except Exception as e:
+                        logger.error(
+                            f"Ошибка при отправке группированного сообщения: {e}",
+                            exc_info=True,
+                        )
+                elif node_added and self.grouping_service.is_grouping_active(
+                    message.message_id
+                ):
+                    # Обновляем существующее сообщение
+                    received_by_nodes = [
+                        {
+                            "node_id": node.node_id,
+                            "node_name": node.node_name,
+                            "node_short": node.node_short,
+                            "received_at": node.received_at,
+                            "rssi": node.rssi,
+                            "snr": node.snr,
+                            "hops_away": node.hops_away,
+                            "sender_node": node.sender_node,
+                            "sender_node_name": node.sender_node_name,
+                        }
+                        for node in group.get_unique_nodes()
+                    ]
+
+                    telegram_text = message.format_for_telegram_with_grouping(
+                        received_by_nodes=received_by_nodes,
+                        show_receive_time=self.telegram_config.show_receive_time,
+                        node_cache_service=self.message_service.node_cache_service,
+                    )
+
+                    try:
+                        await self.telegram_repo.edit_group_message(
+                            group.telegram_message_id, telegram_text
+                        )
+                        logger.info(
+                            f"Обновлено группированное сообщение: message_id={message.message_id}, telegram_message_id={group.telegram_message_id}, нод: {len(received_by_nodes)}"
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Ошибка при редактировании группированного сообщения: {e}",
+                            exc_info=True,
+                        )
+                else:
+                    logger.debug(
+                        f"Пропущено обновление сообщения: message_id={message.message_id}, node_added={node_added}, grouping_active={self.grouping_service.is_grouping_active(message.message_id)}"
+                    )
+
+            # Очищаем истекшие группы
+            self.grouping_service.cleanup_expired_groups()
+        else:
+            # Обычная отправка без группировки
+            telegram_text = message.format_for_telegram(
+                node_cache_service=self.message_service.node_cache_service
+            )
+
+            # Отправляем в групповой чат
+            try:
+                await self.telegram_repo.send_to_group(telegram_text)
+            except Exception as e:
+                logger.error(f"Ошибка при отправке в группу: {e}", exc_info=True)
+
+        # Отправляем пользователям (без группировки для личных сообщений)
         if self.notify_user_ids:
+            telegram_text = message.format_for_telegram(
+                node_cache_service=self.message_service.node_cache_service
+            )
             for user_id in self.notify_user_ids:
                 if self.telegram_repo.is_user_allowed(user_id):
                     try:
@@ -178,7 +298,9 @@ class MQTTMessageHandlerImpl(MQTTMessageHandler):
         telegram_repo: TelegramRepository,
         proxy_service: MQTTProxyService,
         message_service: MessageService,
+        telegram_config: TelegramConfig,
         notify_user_ids: Optional[List[int]] = None,
+        grouping_service: Optional[MessageGroupingService] = None,
     ):
         """
         Создает оба обработчика - для прокси и для основного брокера.
@@ -187,13 +309,17 @@ class MQTTMessageHandlerImpl(MQTTMessageHandler):
             telegram_repo: Репозиторий для работы с Telegram
             proxy_service: Сервис MQTT прокси
             message_service: Сервис обработки сообщений
+            telegram_config: Конфигурация Telegram
             notify_user_ids: Список user_id для уведомлений (None = все разрешенные)
+            grouping_service: Сервис группировки сообщений (опционально)
         """
         self.proxy_handler = ProxyMessageHandler(proxy_service)
         self.main_handler = MainBrokerMessageHandler(
             telegram_repo=telegram_repo,
             message_service=message_service,
+            telegram_config=telegram_config,
             notify_user_ids=notify_user_ids,
+            grouping_service=grouping_service,
         )
 
     async def handle_message(self, topic: str, payload: bytes) -> None:
