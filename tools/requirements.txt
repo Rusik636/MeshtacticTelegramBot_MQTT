@@ -1,0 +1,26 @@
+# Requirements для инструментов в директории tools/
+#
+# Установка:
+#   pip install -r tools/requirements.txt
+#
+# Или из корня проекта:
+#   pip install -r tools/requirements.txt
+
+# MQTT client (async) - для подключения к MQTT брокеру
+aiomqtt
+
+# Protobuf / Meshtastic parsing - для декодирования protobuf сообщений
+meshtastic
+protobuf
+
+# YAML parser - для чтения конфигурационных файлов
+pyyaml
+
+# Optional: цветной вывод JSON в консоль (для protobuf_sniffer.py)
+pygments
+
+# Optional: для декомпрессии Unishox2 (TEXT_MESSAGE_COMPRESSED_APP)
+# Установка вручную, если требуется:
+#   pip install unishox2-py
+# Или из исходников: https://github.com/siara-cc/unishox2-py
+

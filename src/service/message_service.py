@@ -23,6 +23,80 @@ from src.domain.message import MeshtasticMessage
 logger = logging.getLogger(__name__)
 
 
+def _normalize_node_id(node_id: Any) -> Optional[str]:
+    """
+    Нормализует node ID к единому формату "!hex" (например, "!12345678").
+
+    Обрабатывает различные форматы:
+    - int: конвертирует в hex с префиксом "!"
+    - str "!12345678": возвращает как есть (в нижнем регистре)
+    - str "12345678": парсит как hex и добавляет префикс "!"
+    - str "0x12345678": конвертирует в "!12345678"
+
+    Args:
+        node_id: Node ID в любом формате (int, str)
+
+    Returns:
+        Нормализованный node ID в формате "!hex" или None, если node_id пустой/невалидный
+    """
+    if node_id is None:
+        return None
+
+    try:
+        if isinstance(node_id, int):
+            # int -> "!hex"
+            return f"!{hex(node_id)[2:]}"
+        elif isinstance(node_id, str):
+            node_str = node_id.strip()
+            if not node_str:
+                return None
+
+            # Если уже в формате "!hex", нормализуем регистр
+            if node_str.startswith("!"):
+                hex_part = node_str[1:]
+                if not hex_part:
+                    return None
+                # Проверяем, что после "!" валидный hex
+                try:
+                    int(hex_part, 16)
+                    return f"!{hex_part.lower()}"
+                except ValueError:
+                    # Если невалидный hex, возвращаем как есть (нормализованный регистр)
+                    return f"!{hex_part.lower()}"
+
+            # Если начинается с "0x" или "0X", убираем префикс
+            if node_str.startswith("0x") or node_str.startswith("0X"):
+                hex_part = node_str[2:]
+                if not hex_part:
+                    return None
+                try:
+                    num = int(hex_part, 16)
+                    return f"!{hex(num)[2:]}"
+                except ValueError:
+                    # Если невалидный hex, возвращаем как есть с "!"
+                    return f"!{hex_part.lower()}"
+
+            # Пытаемся распарсить как hex число
+            try:
+                num = int(node_str, 16)
+                return f"!{hex(num)[2:]}"
+            except ValueError:
+                # Если не hex, пытаемся как десятичное число
+                try:
+                    num = int(node_str, 10)
+                    return f"!{hex(num)[2:]}"
+                except ValueError:
+                    # Если не число, возвращаем как есть с "!" (для нестандартных форматов)
+                    return f"!{node_str.lower()}"
+        else:
+            # Для других типов конвертируем в строку и пытаемся распарсить
+            return _normalize_node_id(str(node_id))
+    except Exception as e:
+        # В случае любой ошибки возвращаем None
+        logger.warning(f"Ошибка нормализации node_id: {node_id}, error: {e}")
+        return None
+
+
 class BaseParser:
     def __init__(self, node_cache_service: Optional[Any] = None):
         self.node_cache_service = node_cache_service
@@ -64,17 +138,8 @@ class BaseParser:
             if not text:
                 text = raw_payload.get("text")
 
-        # from_node
-        from_node_str = None
-        if from_node:
-            if isinstance(from_node, (int, str)):
-                from_node_str = (
-                    f"!{hex(int(from_node))[2:]}"
-                    if isinstance(from_node, int)
-                    else str(from_node)
-                )
-            else:
-                from_node_str = str(from_node)
+        # from_node - нормализуем к единому формату
+        from_node_str = _normalize_node_id(from_node)
 
         from_node_name = None
         from_node_short = None
@@ -98,12 +163,7 @@ class BaseParser:
                 node_id = None
                 from_node_raw = raw_payload.get("from")
                 if from_node_raw:
-                    if isinstance(from_node_raw, (int, str)):
-                        node_id = (
-                            f"!{hex(int(from_node_raw))[2:]}"
-                            if isinstance(from_node_raw, int)
-                            else str(from_node_raw)
-                        )
+                    node_id = _normalize_node_id(from_node_raw)
                 if node_id:
                     latitude_i = payload_data.get("latitude_i")
                     longitude_i = payload_data.get("longitude_i")
@@ -146,45 +206,35 @@ class BaseParser:
             if cached_short:
                 from_node_short = cached_short
 
-        # sender_node (ретранслятор)
-        sender_node_str = None
+        # sender_node (ретранслятор) - нормализуем к единому формату
+        sender_node_str = _normalize_node_id(sender_node)
         sender_node_name = None
         sender_node_short = None
-        if sender_node:
-            if isinstance(sender_node, (int, str)):
-                sender_node_str = (
-                    f"!{hex(int(sender_node))[2:]}"
-                    if isinstance(sender_node, int)
-                    else str(sender_node)
-                )
-            else:
-                sender_node_str = str(sender_node)
 
-            # Кэширование ретранслятора
-            if message_type != "nodeinfo" and self.node_cache_service and sender_node_str:
-                cached_sender_name = self.node_cache_service.get_node_name(sender_node_str)
-                cached_sender_short = self.node_cache_service.get_node_shortname(sender_node_str)
-                if cached_sender_name:
-                    sender_node_name = cached_sender_name
-                if cached_sender_short:
-                    sender_node_short = cached_sender_short
+        # Кэширование ретранслятора
+        if message_type != "nodeinfo" and self.node_cache_service and sender_node_str:
+            cached_sender_name = self.node_cache_service.get_node_name(sender_node_str)
+            cached_sender_short = self.node_cache_service.get_node_shortname(sender_node_str)
+            if cached_sender_name:
+                sender_node_name = cached_sender_name
+            if cached_sender_short:
+                sender_node_short = cached_sender_short
 
         # Получатель
         to_node_name = None
         to_node_short = None
         to_node_str = None
         if to_node is not None:
-            if isinstance(to_node, (int, str)):
-                to_node_str = (
-                    f"!{hex(int(to_node))[2:]}"
-                    if isinstance(to_node, int)
-                    else str(to_node)
-                )
-            else:
-                to_node_str = str(to_node)
-            if to_node == 4294967295 or to_node_str == "!ffffffff":
+            # Нормализуем to_node, но сохраняем специальное значение "Всем"
+            to_node_str = _normalize_node_id(to_node)
+            # Проверяем специальное значение "Всем" (4294967295 = 0xffffffff)
+            if (
+                to_node == 4294967295
+                or to_node_str == "!ffffffff"
+                or to_node_str == "!FFFFFFFF"
+            ):
                 to_node_str = "Всем"
-            elif self.node_cache_service:
+            elif to_node_str and self.node_cache_service:
                 to_node_name = self.node_cache_service.get_node_name(to_node_str)
                 to_node_short = self.node_cache_service.get_node_shortname(to_node_str)
 

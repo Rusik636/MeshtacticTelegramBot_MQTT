@@ -188,7 +188,12 @@ class MeshtasticMessage(BaseModel):
 
         # Формируем информацию о ретрансляторе (sender)
         # Показываем только если sender отличается от from_node (сообщение было ретранслировано)
-        if self.sender_node and self.sender_node != self.from_node:
+        # Сравниваем нормализованные значения (оба уже должны быть в формате "!hex")
+        sender_normalized = (
+            self.sender_node.lower() if self.sender_node else None
+        )
+        from_normalized = self.from_node.lower() if self.from_node else None
+        if sender_normalized and sender_normalized != from_normalized:
             # Экранируем все пользовательские данные для защиты от XSS
             repeater_info = []
 
