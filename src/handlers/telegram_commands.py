@@ -87,8 +87,10 @@ class TelegramCommandsHandler:
         async def handle_id(message: types.Message):
             await self._handle_id(message)
 
-        # Обработка всех остальных сообщений
-        @self.bot.message_handler(func=lambda m: True)
+        # Обработка всех остальных сообщений (исключая команды)
+        @self.bot.message_handler(
+            func=lambda m: m.text is None or not m.text.startswith("/")
+        )
         async def handle_unknown(message: types.Message):
             await self._handle_unknown(message)
 
@@ -465,8 +467,18 @@ class TelegramCommandsHandler:
         if message.chat.type != "private":
             return
 
+        # Игнорируем команды (они обрабатываются специальными обработчиками)
+        if message.text and message.text.startswith("/"):
+            # Команда должна была быть обработана специальным обработчиком
+            # Если мы здесь, значит команда не распознана, но не будем отвечать,
+            # чтобы не дублировать ответы
+            logger.debug(
+                f"Неизвестная команда от user_id={message.from_user.id}: {message.text}"
+            )
+            return
+
         reply_text = (
-            "❓ Неизвестная команда.\n\n"
+            "❓ Неизвестное сообщение.\n\n"
             "Используйте /help для просмотра доступных команд."
         )
 
