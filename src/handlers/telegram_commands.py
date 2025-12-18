@@ -82,6 +82,11 @@ class TelegramCommandsHandler:
         async def handle_mode(message: types.Message):
             await self._handle_mode(message)
 
+        # Команда /id
+        @self.bot.message_handler(commands=["id"])
+        async def handle_id(message: types.Message):
+            await self._handle_id(message)
+
         # Обработка всех остальных сообщений
         @self.bot.message_handler(func=lambda m: True)
         async def handle_unknown(message: types.Message):
@@ -138,6 +143,7 @@ class TelegramCommandsHandler:
             "📋 <b>Доступные команды:</b>\n\n"
             "/start - Начать работу с ботом\n"
             "/help - Показать эту справку\n"
+            "/id - Показать ваш Telegram ID\n"
             "/status - Статус бота и подключений\n"
             "/info - Подробная информация о конфигурации\n"
             "/get_chat_id - Получить ID чата\n"
@@ -393,6 +399,62 @@ class TelegramCommandsHandler:
                 parse_mode="HTML",
             )
             logger.info(f"Установлен режим {mode} для user_id={user_id}")
+
+    async def _handle_id(self, message: types.Message) -> None:
+        """Обрабатывает команду /id для отображения Telegram ID пользователя."""
+        if not await self._check_user_allowed(message):
+            return
+
+        user = message.from_user
+        user_id = user.id
+
+        # Формируем информацию о пользователе
+        user_info_parts = []
+        user_info_parts.append(f"🆔 <b>Ваш Telegram ID:</b> <code>{user_id}</code>")
+
+        if user.username:
+            user_info_parts.append(f"👤 <b>Username:</b> @{user.username}")
+
+        if user.first_name:
+            user_info_parts.append(f"📝 <b>Имя:</b> {user.first_name}")
+            if user.last_name:
+                user_info_parts[-1] += f" {user.last_name}"
+
+        user_info_parts.append("")
+
+        # Информация о приватных топиках
+        user_info_parts.append(
+            "📡 <b>Для приватных топиков используйте:</b>\n"
+            f"<code>msh/private/{user_id}/#</code>"
+        )
+
+        user_info_parts.append("")
+
+        # Информация о режиме (если установлен)
+        if self.topic_routing_service:
+            current_mode = self.topic_routing_service.get_user_mode(user_id)
+            if current_mode:
+                mode_name = {
+                    RoutingMode.ALL: "Все пакеты",
+                    RoutingMode.PRIVATE: "Только личные",
+                    RoutingMode.GROUP: "Только группа",
+                    RoutingMode.PRIVATE_GROUP: "Личные + группа",
+                }.get(current_mode, current_mode.value)
+                user_info_parts.append(
+                    f"⚙️ <b>Текущий режим:</b> {mode_name} (переопределен)"
+                )
+            else:
+                user_info_parts.append(
+                    "⚙️ <b>Текущий режим:</b> по умолчанию (из топика)"
+                )
+
+        user_info_text = "\n".join(user_info_parts)
+
+        await self.bot.reply_to(message, user_info_text, parse_mode="HTML")
+        logger.info(
+            f"Команда /id от user_id={user_id}, "
+            f"username=@{user.username if user.username else 'N/A'}"
+        )
 
     async def _handle_unknown(self, message: types.Message) -> None:
         """Обрабатывает неизвестные сообщения."""
