@@ -1,18 +1,21 @@
 """
 Репозиторий для работы с MQTT брокером.
 
-Абстрагирует работу с MQTT - подключение, подписка, публикация.
+Абстрагирует работу с MQTT - подписка, публикация.
+Отвечает только за работу с данными, не за подключение.
 """
 
 import json
 import logging
 from abc import ABC, abstractmethod
-from typing import Protocol, Optional, Dict, Any
+from typing import Protocol, Optional, Dict, Any, TYPE_CHECKING
 from aiomqtt import Client as MQTTClient
 from aiomqtt.exceptions import MqttError
 
 from src.config import MQTTBrokerConfig
 
+if TYPE_CHECKING:
+    from src.infrastructure.mqtt_connection import MQTTConnectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -52,58 +55,53 @@ class MQTTRepository(ABC):
 
 
 class AsyncMQTTRepository(MQTTRepository):
-    """Реализация MQTT репозитория через aiomqtt."""
+    """
+    Реализация MQTT репозитория через aiomqtt.
+    
+    Отвечает только за работу с данными (подписка, публикация).
+    Подключение управляется через MQTTConnectionManager.
+    """
 
-    def __init__(self, config: MQTTBrokerConfig):
+    def __init__(
+        self,
+        config: MQTTBrokerConfig,
+        connection_manager: Optional["MQTTConnectionManager"] = None,
+    ):
         """
-        Сохраняет конфигурацию брокера.
+        Создает репозиторий.
 
         Args:
             config: Конфигурация MQTT брокера
+            connection_manager: Менеджер подключения (опционально, создастся автоматически)
         """
         self.config = config
-        self._client: Optional[MQTTClient] = None
+        
+        # Используем переданный менеджер или создаем новый
+        if connection_manager is None:
+            from src.infrastructure.mqtt_connection import MQTTConnectionManager
+            connection_manager = MQTTConnectionManager(config)
+        self.connection_manager = connection_manager
+        
         self._handler: Optional[MQTTMessageHandler] = None
         self._subscribed_topic: Optional[str] = None
 
+    @property
+    def _client(self) -> Optional[MQTTClient]:
+        """
+        Возвращает MQTT клиент через менеджер подключения.
+
+        Returns:
+            Экземпляр MQTTClient или None, если не подключен
+        """
+        return self.connection_manager.client
+
     async def connect(self) -> None:
-        """Подключается к MQTT брокеру."""
-        try:
-            logger.info(
-                f"Подключение к MQTT брокеру: host={self.config.host}, "
-                f"port={self.config.port}, client_id={self.config.client_id}"
-            )
-
-            # В aiomqtt 2.0+ client_id передается через параметр identifier как
-            # строка
-            self._client = MQTTClient(
-                hostname=self.config.host,
-                port=self.config.port,
-                username=self.config.username,
-                password=self.config.password,
-                identifier=self.config.client_id,
-                keepalive=self.config.keepalive,
-            )
-
-            await self._client.__aenter__()
-
-            logger.info("Успешно подключен к MQTT брокеру")
-        except MqttError as e:
-            logger.error(f"Ошибка подключения к MQTT брокеру: {e}", exc_info=True)
-            raise
+        """Подключается к MQTT брокеру через менеджер подключения."""
+        await self.connection_manager.connect()
 
     async def disconnect(self) -> None:
-        """Отключается от MQTT брокера."""
-        if self._client:
-            try:
-                await self._client.__aexit__(None, None, None)
-                logger.info("Отключен от MQTT брокера")
-            except Exception as e:
-                logger.error(
-                    f"Ошибка при отключении от MQTT брокера: {e}", exc_info=True
-                )
-            finally:
-                self._client = None
+        """Отключается от MQTT брокера через менеджер подключения."""
+        await self.connection_manager.disconnect()
 
     async def subscribe(self, topic: str, handler: MQTTMessageHandler) -> None:
         """
@@ -113,7 +111,8 @@ class AsyncMQTTRepository(MQTTRepository):
             topic: MQTT топик для подписки
             handler: Обработчик входящих сообщений
         """
-        if not self._client:
+        client = self._client
+        if not client:
             raise RuntimeError("MQTT клиент не подключен. Вызовите connect() сначала.")
 
         self._handler = handler
@@ -121,10 +120,10 @@ class AsyncMQTTRepository(MQTTRepository):
 
         try:
             logger.info(f"Подписка на MQTT топик: topic={topic}, qos={self.config.qos}")
-            await self._client.subscribe(topic, qos=self.config.qos)
+            await client.subscribe(topic, qos=self.config.qos)
 
             # Запускаем обработку сообщений в бесконечном цикле
-            async for message in self._client.messages:
+            async for message in client.messages:
                 try:
                     # В aiomqtt 2.0+ topic - это строка напрямую
                     topic_str = str(message.topic)
@@ -153,7 +152,8 @@ class AsyncMQTTRepository(MQTTRepository):
             payload: Данные для публикации (bytes, str или dict)
             qos: QoS уровень
         """
-        if not self._client:
+        client = self._client
+        if not client:
             raise RuntimeError("MQTT клиент не подключен. Вызовите connect() сначала.")
 
         try:
@@ -165,7 +165,7 @@ class AsyncMQTTRepository(MQTTRepository):
             else:
                 payload_bytes = payload
 
-            await self._client.publish(topic, payload_bytes, qos=qos)
+            await client.publish(topic, payload_bytes, qos=qos)
 
             logger.debug(
                 f"Опубликовано MQTT сообщение: topic={topic}, qos={qos}, "

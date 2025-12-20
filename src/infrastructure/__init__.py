@@ -10,6 +10,7 @@
 from src.infrastructure.di_container import DIContainer, Lifetime
 from src.infrastructure.file_storage import FileStorage, LocalFileStorage
 from src.infrastructure.telegram_connection import TelegramConnectionManager
+from src.infrastructure.mqtt_connection import MQTTConnectionManager
 
 __all__ = [
     "DIContainer",
@@ -17,5 +18,6 @@ __all__ = [
     "FileStorage",
     "LocalFileStorage",
     "TelegramConnectionManager",
+    "MQTTConnectionManager",
 ]
 

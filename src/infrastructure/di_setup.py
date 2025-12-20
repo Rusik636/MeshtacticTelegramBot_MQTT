@@ -36,6 +36,11 @@ def setup_container(config: AppConfig) -> DIContainer:
     container.register_singleton(
         "telegram_connection", TelegramConnectionManager(config.telegram)
     )
+    container.register_factory(
+        "mqtt_connection",
+        lambda: _create_mqtt_connection(container),
+        Lifetime.SINGLETON,
+    )
 
     # Регистрируем сервисы кэша
     container.register_factory(
@@ -86,6 +91,12 @@ def setup_container(config: AppConfig) -> DIContainer:
     container.register_factory(
         "telegram_repository",
         lambda: _create_telegram_repository(container),
+        Lifetime.SINGLETON,
+    )
+
+    container.register_factory(
+        "mqtt_repository",
+        lambda: _create_mqtt_repository(container),
         Lifetime.SINGLETON,
     )
 
@@ -192,12 +203,30 @@ def _create_telegram_repository(container: DIContainer):
     )
 
 
+def _create_mqtt_connection(container: DIContainer):
+    """Создает MQTTConnectionManager."""
+    from src.infrastructure.mqtt_connection import MQTTConnectionManager
+
+    config = container.resolve("config")
+    return MQTTConnectionManager(config.mqtt_source)
+
+
+def _create_mqtt_repository(container: DIContainer):
+    """Создает AsyncMQTTRepository."""
+    from src.repo.mqtt_repository import AsyncMQTTRepository
+
+    config = container.resolve("config")
+    mqtt_connection = container.resolve("mqtt_connection")
+    return AsyncMQTTRepository(config.mqtt_source, connection_manager=mqtt_connection)
+
+
 def _create_main_broker_service(container: DIContainer):
     """Создает MainBrokerService."""
     from src.service.main_broker_service import MainBrokerService
 
     config = container.resolve("config")
-    return MainBrokerService(config.mqtt_source)
+    mqtt_repo = container.resolve("mqtt_repository")
+    return MainBrokerService(config.mqtt_source, mqtt_repo=mqtt_repo)
 
 
 def _create_mqtt_proxy_service(container: DIContainer):
