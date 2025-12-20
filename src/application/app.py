@@ -10,18 +10,14 @@ import signal
 from typing import Optional
 
 from src.config import AppConfig
-from src.repo.telegram_repository import AsyncTelegramRepository
-from src.service.main_broker_service import MainBrokerService
-from src.service.message_service import MessageService
-from src.service.mqtt_proxy_service import MQTTProxyService
-from src.service.node_cache_service import NodeCacheService
-from src.service.message_grouping_service import MessageGroupingService
-from src.service.topic_routing_service import TopicRoutingService, RoutingMode
+from src.service.topic_routing_service import RoutingMode
 from src.service.message_processing_strategy import ProcessingMode
 from src.handlers.handler_factory import HandlerChainFactory
 from src.handlers.message_handler_adapter import MessageHandlerAdapter
 from src.handlers.proxy_status_handler import ProxyStatusHandler
 from src.handlers.telegram_commands import TelegramCommandsHandler
+from src.infrastructure.di_setup import setup_container
+from src.infrastructure.di_container import DIContainer
 
 
 logger = logging.getLogger(__name__)
@@ -30,45 +26,31 @@ logger = logging.getLogger(__name__)
 class MeshtasticTelegramBotApp:
     """Главный класс приложения - запускает и останавливает все сервисы."""
 
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig, container: Optional[DIContainer] = None):
         """
         Создает все необходимые сервисы и обработчики.
 
         Args:
             config: Конфигурация приложения
+            container: DI-контейнер (опционально, создастся автоматически)
         """
         self.config = config
         self._running = False
         self._shutdown_event: Optional[asyncio.Event] = None
 
-        # Инициализируем сервисы основного брокера
-        self.main_broker_service = MainBrokerService(config.mqtt_source)
-        self.telegram_repo = AsyncTelegramRepository(config.telegram)
-        self.node_cache_service = NodeCacheService()
-        self.message_service = MessageService(
-            node_cache_service=self.node_cache_service,
-            payload_format=config.mqtt_source.payload_format,
-        )
+        # Настраиваем DI-контейнер
+        if container is None:
+            container = setup_container(config)
+        self.container = container
 
-        # Инициализируем прокси-сервис отдельно
-        self.proxy_service = MQTTProxyService(
-            config.mqtt_proxy_targets, source_topic=config.mqtt_source.topic
-        )
-
-        # Инициализируем сервис группировки сообщений
-        self.grouping_service = MessageGroupingService(
-            grouping_timeout_seconds=config.telegram.message_grouping_timeout
-        )
-
-        # Инициализируем сервис определения режима из топика
-        default_routing_mode = RoutingMode.ALL
-        if config.message_processing.default_mode == "private":
-            default_routing_mode = RoutingMode.PRIVATE
-        elif config.message_processing.default_mode == "group":
-            default_routing_mode = RoutingMode.GROUP
-        self.topic_routing_service = TopicRoutingService(
-            default_mode=default_routing_mode
-        )
+        # Получаем все сервисы из DI-контейнера
+        self.main_broker_service = container.resolve("main_broker_service")
+        self.telegram_repo = container.resolve("telegram_repository")
+        self.node_cache_service = container.resolve("node_cache_service")
+        self.message_service = container.resolve("message_service")
+        self.proxy_service = container.resolve("mqtt_proxy_service")
+        self.grouping_service = container.resolve("message_grouping_service")
+        self.topic_routing_service = container.resolve("topic_routing_service")
 
         # Создаем стратегию обработки по умолчанию
         default_processing_mode = ProcessingMode.GROUP

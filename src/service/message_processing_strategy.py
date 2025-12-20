@@ -15,6 +15,7 @@ from enum import Enum
 from src.domain.message import MeshtasticMessage
 from src.repo.telegram_repository import TelegramRepository
 from src.service.topic_routing_service import RoutingMode
+from src.service.telegram_message_formatter import TelegramMessageFormatter
 
 if TYPE_CHECKING:
     from src.service.node_cache_service import NodeCacheService
@@ -39,6 +40,7 @@ class MessageProcessingStrategy(ABC):
         node_cache_service: Optional["NodeCacheService"] = None,
         grouping_service: Optional["MessageGroupingService"] = None,
         telegram_config: Optional[Any] = None,
+        message_formatter: Optional[TelegramMessageFormatter] = None,
     ):
         """
         Инициализирует стратегию.
@@ -47,10 +49,16 @@ class MessageProcessingStrategy(ABC):
             node_cache_service: Сервис кэша нод
             grouping_service: Сервис группировки сообщений
             telegram_config: Конфигурация Telegram
+            message_formatter: Форматтер сообщений для Telegram
         """
         self.node_cache_service = node_cache_service
         self.grouping_service = grouping_service
         self.telegram_config = telegram_config
+        
+        # Создаем форматтер, если не передан
+        if message_formatter is None:
+            message_formatter = TelegramMessageFormatter(node_cache_service=node_cache_service)
+        self.message_formatter = message_formatter
 
     @abstractmethod
     async def should_process(self, message: MeshtasticMessage) -> bool:
@@ -125,8 +133,8 @@ class PrivateModeStrategy(MessageProcessingStrategy):
             return
 
         # Форматируем сообщение
-        telegram_text = message.format_for_telegram(
-            node_cache_service=self.node_cache_service
+        telegram_text = self.message_formatter.format(
+            message, node_cache_service=self.node_cache_service
         )
 
         # Отправляем только указанному пользователю
@@ -151,6 +159,7 @@ class GroupModeStrategy(MessageProcessingStrategy):
         node_cache_service: Optional["NodeCacheService"] = None,
         grouping_service: Optional["MessageGroupingService"] = None,
         telegram_config: Optional[Any] = None,
+        message_formatter: Optional[TelegramMessageFormatter] = None,
     ):
         """
         Создает стратегию группового режима.
@@ -160,8 +169,14 @@ class GroupModeStrategy(MessageProcessingStrategy):
             node_cache_service: Сервис кэша нод
             grouping_service: Сервис группировки сообщений
             telegram_config: Конфигурация Telegram
+            message_formatter: Форматтер сообщений для Telegram
         """
-        super().__init__(node_cache_service, grouping_service, telegram_config)
+        super().__init__(
+            node_cache_service=node_cache_service,
+            grouping_service=grouping_service,
+            telegram_config=telegram_config,
+            message_formatter=message_formatter,
+        )
         self.send_to_users = send_to_users
 
     async def should_process(self, message: MeshtasticMessage) -> bool:
@@ -229,7 +244,8 @@ class GroupModeStrategy(MessageProcessingStrategy):
                         for node in group.get_unique_nodes()
                     ]
 
-                    telegram_text = message.format_for_telegram_with_grouping(
+                    telegram_text = self.message_formatter.format_with_grouping(
+                        message,
                         received_by_nodes=received_by_nodes,
                         show_receive_time=self.telegram_config.show_receive_time,
                         node_cache_service=self.node_cache_service,
@@ -268,7 +284,8 @@ class GroupModeStrategy(MessageProcessingStrategy):
                         for node in group.get_unique_nodes()
                     ]
 
-                    telegram_text = message.format_for_telegram_with_grouping(
+                    telegram_text = self.message_formatter.format_with_grouping(
+                        message,
                         received_by_nodes=received_by_nodes,
                         show_receive_time=self.telegram_config.show_receive_time,
                         node_cache_service=self.node_cache_service,
@@ -291,8 +308,8 @@ class GroupModeStrategy(MessageProcessingStrategy):
             self.grouping_service.cleanup_expired_groups()
         else:
             # Обычная отправка без группировки
-            telegram_text = message.format_for_telegram(
-                node_cache_service=self.node_cache_service
+            telegram_text = self.message_formatter.format(
+                message, node_cache_service=self.node_cache_service
             )
 
             # Отправляем в групповой чат
@@ -306,8 +323,8 @@ class GroupModeStrategy(MessageProcessingStrategy):
 
         # Опционально отправляем пользователям (без группировки для личных сообщений)
         if self.send_to_users and notify_user_ids:
-            telegram_text = message.format_for_telegram(
-                node_cache_service=self.node_cache_service
+            telegram_text = self.message_formatter.format(
+                message, node_cache_service=self.node_cache_service
             )
             for user_id in notify_user_ids:
                 if telegram_repo.is_user_allowed(user_id):
@@ -353,8 +370,8 @@ class AllModeStrategy(MessageProcessingStrategy):
         """
         # Для текстовых - обычное форматирование
         if message.message_type == "text":
-            telegram_text = message.format_for_telegram(
-                node_cache_service=self.node_cache_service
+            telegram_text = self.message_formatter.format(
+                message, node_cache_service=self.node_cache_service
             )
             
             # Текстовые сообщения отправляем в группу

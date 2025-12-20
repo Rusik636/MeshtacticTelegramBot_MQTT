@@ -2,15 +2,18 @@
 Репозиторий для работы с Telegram Bot API.
 
 Абстрагирует отправку сообщений в группы и пользователям.
+Отвечает только за работу с данными, не за подключение.
 """
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from telebot.async_telebot import AsyncTeleBot
 
 from src.config import TelegramConfig
 
+if TYPE_CHECKING:
+    from src.infrastructure.telegram_connection import TelegramConnectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -58,18 +61,44 @@ class TelegramRepository(ABC):
 
 
 class AsyncTelegramRepository(TelegramRepository):
-    """Реализация Telegram репозитория через pyTelegramBotAPI."""
+    """
+    Реализация Telegram репозитория через pyTelegramBotAPI.
+    
+    Отвечает только за работу с данными (отправка/редактирование сообщений).
+    Подключение управляется через TelegramConnectionManager.
+    """
 
-    def __init__(self, config: TelegramConfig):
+    def __init__(
+        self,
+        config: TelegramConfig,
+        connection_manager: Optional["TelegramConnectionManager"] = None,
+    ):
         """
-        Создает бота и сохраняет конфигурацию.
+        Создает репозиторий.
 
         Args:
             config: Конфигурация Telegram бота
+            connection_manager: Менеджер подключения (опционально, создастся автоматически)
         """
         self.config = config
-        self.bot = AsyncTeleBot(config.bot_token)
+        
+        # Используем переданный менеджер или создаем новый
+        if connection_manager is None:
+            from src.infrastructure.telegram_connection import TelegramConnectionManager
+            connection_manager = TelegramConnectionManager(config)
+        self.connection_manager = connection_manager
+        
         self._allowed_user_ids: Optional[List[int]] = config.allowed_user_ids
+
+    @property
+    def bot(self) -> AsyncTeleBot:
+        """
+        Возвращает экземпляр бота через менеджер подключения.
+
+        Returns:
+            Экземпляр AsyncTeleBot
+        """
+        return self.connection_manager.bot
 
     async def send_message(
         self,

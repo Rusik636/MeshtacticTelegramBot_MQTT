@@ -5,11 +5,13 @@
 Обновляется при получении nodeinfo и position пакетов.
 """
 
-import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.infrastructure.file_storage import FileStorage
 
 logger = logging.getLogger(__name__)
 
@@ -94,29 +96,44 @@ class NodeInfo:
 class NodeCacheService:
     """Кэш информации о нодах - хранит в памяти и на диске, обновляется раз в 3 дня."""
 
-    def __init__(self, cache_file: str = "data/nodes_cache.json"):
-        """Создает сервис кэша и загружает данные с диска."""
+    def __init__(
+        self,
+        cache_file: str = "data/nodes_cache.json",
+        file_storage: Optional["FileStorage"] = None,
+    ):
+        """
+        Создает сервис кэша и загружает данные с диска.
+
+        Args:
+            cache_file: Путь к файлу кэша
+            file_storage: Сервис для работы с файловой системой (опционально)
+        """
         self.cache_file = Path(cache_file)
         self._cache: Dict[str, NodeInfo] = {}
+        
+        # Используем переданный FileStorage или создаем LocalFileStorage по умолчанию
+        if file_storage is None:
+            from src.infrastructure.file_storage import LocalFileStorage
+            file_storage = LocalFileStorage()
+        self.file_storage = file_storage
         self.update_interval_days = 3
 
         # Создаем директорию для кэша, если не существует
-        self.cache_file.parent.mkdir(parents=True, exist_ok=True)
+        self.file_storage.ensure_directory(self.cache_file.parent)
 
         # Загружаем кэш с диска при инициализации
         self.load_cache()
 
     def load_cache(self) -> None:
         """Загружает кэш нод с диска."""
-        if not self.cache_file.exists():
+        if not self.file_storage.exists(self.cache_file):
             logger.info(
                 f"Файл кэша не найден: {self.cache_file}. Создадим новый при первом обновлении."
             )
             return
 
         try:
-            with open(self.cache_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            data = self.file_storage.read_json(self.cache_file)
 
             for node_data in data.get("nodes", []):
                 try:
@@ -127,7 +144,7 @@ class NodeCacheService:
                     continue
 
             logger.info(f"Загружено {len(self._cache)} нод из кэша")
-        except (json.JSONDecodeError, IOError) as e:
+        except (FileNotFoundError, ValueError) as e:
             logger.error(f"Ошибка при загрузке кэша нод: {e}", exc_info=True)
 
     def save_cache(self) -> None:
@@ -138,8 +155,7 @@ class NodeCacheService:
                 "last_saved": datetime.utcnow().isoformat(),
             }
 
-            with open(self.cache_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            self.file_storage.write_json(self.cache_file, data)
 
             logger.debug(f"Сохранено {len(self._cache)} нод в кэш")
         except IOError as e:
@@ -188,13 +204,19 @@ class NodeCacheService:
         if existing_node:
             # Обновляем существующую запись в памяти
             # Обновляем имена, если они предоставлены (даже если None - это может быть явное удаление)
+            updated = False
+            # Используем специальный объект-маркер для различения "не передано" и "передано None"
+            # Но так как в Python нет способа различить это без изменения сигнатуры,
+            # обновляем значения только если они не None (явное удаление через None не поддерживается)
             if longname is not None:
                 existing_node.longname = longname
+                updated = True
             if shortname is not None:
                 existing_node.shortname = shortname
+                updated = True
             
             # Обновляем время последнего обновления только если действительно обновили данные
-            if longname is not None or shortname is not None:
+            if updated:
                 existing_node.last_updated = datetime.utcnow()
                 logger.info(
                     f"Обновлена информация о ноде в кэше: {node_id} "
