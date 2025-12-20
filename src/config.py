@@ -35,7 +35,7 @@ def setup_logging(
 ) -> None:
     """Настраивает логирование (уровень из LOG_LEVEL или INFO по умолчанию)."""
     log_level = level or os.getenv("LOG_LEVEL", "INFO").upper()
-    log_format = format_string or "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    log_format = format_string or "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
 
     # Преобразуем строку уровня в константу logging
     numeric_level = getattr(logging, log_level, logging.INFO)
