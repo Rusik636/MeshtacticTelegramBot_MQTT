@@ -3,7 +3,7 @@
 """
 
 import logging
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, Any
 
 from src.handlers.message_handler_chain import MessageHandler, HandlerConfig
 from src.domain.message import MeshtasticMessage
@@ -163,10 +163,10 @@ class TelegramHandler(MessageHandler):
             )
 
     def _get_strategy_for_mode(
-        self, routing_mode: "RoutingMode"
+        self, routing_mode: Any
     ) -> "MessageProcessingStrategy":
         """
-        Получает стратегию обработки для режима из топика.
+        Получает стратегию обработки для режима из топика через фабрику.
 
         Args:
             routing_mode: Режим маршрутизации из топика
@@ -175,49 +175,30 @@ class TelegramHandler(MessageHandler):
             Стратегия обработки сообщений
         """
         from src.service.topic_routing_service import RoutingMode as TRoutingMode
-        from src.service.message_processing_strategy import (
-            PrivateModeStrategy,
-            GroupModeStrategy,
-            AllModeStrategy,
-        )
+        from src.service.message_processing_strategy import ProcessingMode
+        from src.handlers.handler_factory import HandlerChainFactory
 
-        # Если стратегия уже соответствует режиму - используем её
-        if isinstance(self.strategy, PrivateModeStrategy) and routing_mode in (
-            TRoutingMode.PRIVATE,
-            TRoutingMode.PRIVATE_GROUP,
-        ):
-            return self.strategy
-        if isinstance(self.strategy, GroupModeStrategy) and routing_mode == TRoutingMode.GROUP:
-            return self.strategy
-        if isinstance(self.strategy, AllModeStrategy) and routing_mode == TRoutingMode.ALL:
-            return self.strategy
-
-        # Создаем новую стратегию на основе режима из топика
+        # Преобразуем RoutingMode в ProcessingMode
         if routing_mode == TRoutingMode.PRIVATE:
-            return PrivateModeStrategy(
-                node_cache_service=self.strategy.node_cache_service,
-                grouping_service=self.strategy.grouping_service,
-                telegram_config=self.strategy.telegram_config,
-            )
+            processing_mode = ProcessingMode.PRIVATE
+            send_to_users = False
         elif routing_mode == TRoutingMode.GROUP:
-            return GroupModeStrategy(
-                send_to_users=False,
-                node_cache_service=self.strategy.node_cache_service,
-                grouping_service=self.strategy.grouping_service,
-                telegram_config=self.strategy.telegram_config,
-            )
+            processing_mode = ProcessingMode.GROUP
+            send_to_users = False
         elif routing_mode == TRoutingMode.PRIVATE_GROUP:
-            # Для PRIVATE_GROUP используем GroupModeStrategy с отправкой пользователям
-            return GroupModeStrategy(
-                send_to_users=True,
-                node_cache_service=self.strategy.node_cache_service,
-                grouping_service=self.strategy.grouping_service,
-                telegram_config=self.strategy.telegram_config,
-            )
+            processing_mode = ProcessingMode.GROUP
+            send_to_users = True
         else:  # TRoutingMode.ALL
-            return AllModeStrategy(
-                node_cache_service=self.strategy.node_cache_service,
-                grouping_service=self.strategy.grouping_service,
-                telegram_config=self.strategy.telegram_config,
-            )
+            processing_mode = ProcessingMode.ALL
+            send_to_users = False
+
+        # Используем фабрику для создания стратегии (соблюдаем OCP)
+        return HandlerChainFactory.create_strategy(
+            mode=processing_mode,
+            send_to_users=send_to_users,
+            node_cache_service=self.strategy.node_cache_service,
+            grouping_service=self.strategy.grouping_service,
+            telegram_config=self.strategy.telegram_config,
+            message_formatter=self.strategy.message_formatter,
+        )
 

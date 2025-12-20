@@ -30,6 +30,7 @@ class HandlerChainFactory:
         node_cache_service: Optional[Any] = None,
         grouping_service: Optional[Any] = None,
         telegram_config: Optional[Any] = None,
+        message_formatter: Optional[Any] = None,
     ) -> MessageProcessingStrategy:
         """
         Создает стратегию обработки по режиму.
@@ -40,6 +41,7 @@ class HandlerChainFactory:
             node_cache_service: Сервис кэша нод
             grouping_service: Сервис группировки сообщений
             telegram_config: Конфигурация Telegram
+            message_formatter: Форматтер сообщений для Telegram
 
         Returns:
             Стратегия обработки сообщений
@@ -52,6 +54,7 @@ class HandlerChainFactory:
                 node_cache_service=node_cache_service,
                 grouping_service=grouping_service,
                 telegram_config=telegram_config,
+                message_formatter=message_formatter,
             )
         elif mode == ProcessingMode.GROUP:
             return GroupModeStrategy(
@@ -59,12 +62,14 @@ class HandlerChainFactory:
                 node_cache_service=node_cache_service,
                 grouping_service=grouping_service,
                 telegram_config=telegram_config,
+                message_formatter=message_formatter,
             )
         elif mode == ProcessingMode.ALL:
             return AllModeStrategy(
                 node_cache_service=node_cache_service,
                 grouping_service=grouping_service,
                 telegram_config=telegram_config,
+                message_formatter=message_formatter,
             )
         else:
             raise ValueError(f"Unknown processing mode: {mode}")

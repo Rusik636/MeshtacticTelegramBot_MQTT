@@ -22,6 +22,8 @@ from src.handlers.handler_factory import HandlerChainFactory
 from src.handlers.message_handler_adapter import MessageHandlerAdapter
 from src.handlers.proxy_status_handler import ProxyStatusHandler
 from src.handlers.telegram_commands import TelegramCommandsHandler
+from src.infrastructure.di_setup import setup_container
+from src.infrastructure.di_container import DIContainer
 
 
 logger = logging.getLogger(__name__)
@@ -30,21 +32,33 @@ logger = logging.getLogger(__name__)
 class MeshtasticTelegramBotApp:
     """Главный класс приложения - запускает и останавливает все сервисы."""
 
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig, container: Optional[DIContainer] = None):
         """
         Создает все необходимые сервисы и обработчики.
 
         Args:
             config: Конфигурация приложения
+            container: DI-контейнер (опционально, создастся автоматически)
         """
         self.config = config
         self._running = False
         self._shutdown_event: Optional[asyncio.Event] = None
 
+        # Настраиваем DI-контейнер
+        if container is None:
+            container = setup_container(config)
+        self.container = container
+
+        # Получаем зависимости из контейнера
+        file_storage = container.resolve("file_storage")
+        telegram_connection = container.resolve("telegram_connection")
+
         # Инициализируем сервисы основного брокера
         self.main_broker_service = MainBrokerService(config.mqtt_source)
-        self.telegram_repo = AsyncTelegramRepository(config.telegram)
-        self.node_cache_service = NodeCacheService()
+        self.telegram_repo = AsyncTelegramRepository(
+            config.telegram, connection_manager=telegram_connection
+        )
+        self.node_cache_service = NodeCacheService(file_storage=file_storage)
         self.message_service = MessageService(
             node_cache_service=self.node_cache_service,
             payload_format=config.mqtt_source.payload_format,
