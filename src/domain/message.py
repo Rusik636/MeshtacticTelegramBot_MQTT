@@ -126,11 +126,13 @@ class MeshtasticMessage(BaseModel):
         if snr is None:
             return "⚪"  # Неизвестно
 
-        if snr > 7:
+        if snr > 10:
             return "🟢"  # Отличный
-        elif snr >= 3:
-            return "🟡"  # Нормальный
+        elif snr >= 5:
+            return "🟡"  # Хороший
         elif snr >= 0:
+            return "🟠"  # Удовлетворительный
+        elif snr >= -5:
             return "🔴"  # Плохой
         else:
             return "⚫"  # Очень плохой
