@@ -145,17 +145,86 @@ class BaseParser:
         from_node_short = None
 
         if message_type == "nodeinfo":
+            # Логируем полную структуру raw_payload для контекста
+            try:
+                raw_payload_json = json.dumps(raw_payload, ensure_ascii=False, indent=2, default=str)
+                logger.info(
+                    f"📋 Полная структура raw_payload для nodeinfo:\n"
+                    f"{'=' * 80}\n"
+                    f"{raw_payload_json}\n"
+                    f"{'=' * 80}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Не удалось сериализовать raw_payload в JSON: {e}"
+                )
+            
             payload_data = raw_payload.get("payload", {})
             if isinstance(payload_data, dict):
-                from_node_name = payload_data.get("longname")
-                from_node_short = payload_data.get("shortname")
-                node_id_from_payload = payload_data.get("id")
-                if self.node_cache_service and node_id_from_payload:
-                    self.node_cache_service.update_node_info(
-                        node_id=node_id_from_payload,
-                        longname=from_node_name,
-                        shortname=from_node_short,
-                        force=False,
+                # Логируем полное содержимое распарсенного payload nodeinfo в красивом JSON формате
+                try:
+                    payload_json = json.dumps(payload_data, ensure_ascii=False, indent=2, default=str)
+                    logger.info(
+                        f"📦 Распарсенный payload nodeinfo (полное содержимое):\n"
+                        f"{'=' * 80}\n"
+                        f"{payload_json}\n"
+                        f"{'=' * 80}"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Не удалось сериализовать payload nodeinfo в JSON: {e}. "
+                        f"Payload type: {type(payload_data)}, keys: {list(payload_data.keys()) if isinstance(payload_data, dict) else 'N/A'}"
+                    )
+                
+                # Пробуем разные варианты имен полей (для JSON и Protobuf)
+                # Protobuf использует snake_case (long_name, short_name)
+                # JSON может использовать camelCase или snake_case
+                from_node_name = (
+                    payload_data.get("longname")
+                    or payload_data.get("long_name")
+                    or payload_data.get("longName")
+                )
+                from_node_short = (
+                    payload_data.get("shortname")
+                    or payload_data.get("short_name")
+                    or payload_data.get("shortName")
+                )
+                node_id_from_payload = (
+                    payload_data.get("id")
+                    or payload_data.get("user_id")
+                    or payload_data.get("userId")
+                )
+                
+                # Если id не найден в payload, пробуем извлечь из from_node
+                if not node_id_from_payload:
+                    node_id_from_payload = from_node_str
+                    logger.debug(
+                        f"node_id не найден в payload nodeinfo, используем from_node: {node_id_from_payload}"
+                    )
+                
+                # Нормализуем node_id перед обновлением кэша
+                if node_id_from_payload:
+                    node_id_normalized = _normalize_node_id(node_id_from_payload)
+                    if self.node_cache_service and node_id_normalized:
+                        self.node_cache_service.update_node_info(
+                            node_id=node_id_normalized,
+                            longname=from_node_name,
+                            shortname=from_node_short,
+                            force=False,
+                        )
+                        logger.info(
+                            f"Обновлен кэш ноды из nodeinfo: node_id={node_id_normalized}, "
+                            f"longname={from_node_name}, shortname={from_node_short}"
+                        )
+                    elif not node_id_normalized:
+                        logger.warning(
+                            f"Не удалось нормализовать node_id из nodeinfo: {node_id_from_payload} "
+                            f"(тип: {type(node_id_from_payload)})"
+                        )
+                else:
+                    logger.warning(
+                        f"node_id не найден в nodeinfo сообщении. payload_data keys: {list(payload_data.keys())}, "
+                        f"from_node: {from_node_str}"
                     )
         elif message_type == "position":
             payload_data = raw_payload.get("payload", {})
@@ -546,6 +615,9 @@ class MessageService:
     def parse_mqtt_message(self, topic: str, payload: bytes) -> MeshtasticMessage:
         """
         Парсит MQTT сообщение в зависимости от формата и топика.
+        
+        Для обновления кэша нод (nodeinfo, position) пытается парсить оба формата,
+        если основной формат не подошел.
 
         Args:
             topic: MQTT топик сообщения
@@ -570,6 +642,31 @@ class MessageService:
                 return self.protobuf_parser.parse(topic, payload)
             if should_parse_json:
                 return self.json_parser.parse(topic, payload)
+            
+            # Если формат не совпадает, но это nodeinfo или position - пытаемся парсить для кэша
+            # Это важно для обновления кэша нод независимо от payload_format
+            logger.debug(
+                f"Формат не совпадает с payload_format={self.payload_format}, "
+                f"пытаемся парсить для обновления кэша: topic={topic}"
+            )
+            if is_protobuf_topic:
+                return self.protobuf_parser.parse(topic, payload)
+            else:
+                return self.json_parser.parse(topic, payload)
+        except Exception as e:
+            # Если основной формат не подошел, пробуем альтернативный для обновления кэша
+            if should_parse_protobuf:
+                logger.debug(f"Ошибка парсинга protobuf, пробуем JSON для кэша: {e}")
+                try:
+                    return self.json_parser.parse(topic, payload)
+                except Exception:
+                    raise e
+            elif should_parse_json:
+                logger.debug(f"Ошибка парсинга JSON, пробуем protobuf для кэша: {e}")
+                try:
+                    return self.protobuf_parser.parse(topic, payload)
+                except Exception:
+                    raise e
             raise ValueError(
                 f"Сообщение не соответствует выбранному формату payload_format={self.payload_format}, topic={topic}"
             )

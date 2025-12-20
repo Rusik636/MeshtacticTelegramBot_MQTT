@@ -112,23 +112,16 @@ class TelegramHandler(MessageHandler):
             topic: MQTT топик сообщения
             payload: Данные сообщения в байтах
         """
-        # Проверяем формат payload
-        is_protobuf_topic = "/e/" in topic and "/json/" not in topic
-        if self.payload_format == "json" and is_protobuf_topic:
-            logger.debug(
-                f"Пропущено protobuf сообщение для парсинга (payload_format=json): topic={topic}"
-            )
-            return
-        if self.payload_format == "protobuf" and not is_protobuf_topic:
-            logger.debug(
-                f"Пропущено JSON сообщение для парсинга (payload_format=protobuf): topic={topic}"
-            )
-            return
-
-        # Парсим сообщение
+        # Парсим сообщение для обновления кэша нод
+        # Важно: парсим ВСЕ сообщения (включая nodeinfo и position), даже если они не отправляются в Telegram
+        # Это необходимо для обновления кэша нод независимо от payload_format
         try:
             message: MeshtasticMessage = self.message_service.parse_mqtt_message(
                 topic, payload
+            )
+            logger.debug(
+                f"Распарсено сообщение: topic={topic}, type={message.message_type}, "
+                f"message_id={message.message_id}"
             )
         except Exception as e:
             logger.error(
@@ -143,10 +136,11 @@ class TelegramHandler(MessageHandler):
         # Выбираем стратегию на основе режима из топика
         strategy = self._get_strategy_for_mode(routing_mode)
 
-        # Проверяем, нужно ли обрабатывать сообщение
+        # Проверяем, нужно ли обрабатывать сообщение для отправки в Telegram
+        # Примечание: кэш нод уже обновлен при парсинге выше, независимо от этой проверки
         if not await strategy.should_process(message):
             logger.debug(
-                f"Сообщение не требует обработки: topic={topic}, type={message.message_type}"
+                f"Сообщение не требует обработки для Telegram: topic={topic}, type={message.message_type}"
             )
             return
 
