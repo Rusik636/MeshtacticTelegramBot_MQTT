@@ -393,7 +393,11 @@ class MessageService:
     """Парсит сообщения от Meshtastic (JSON или Protobuf) и создает доменные модели."""
 
     def __init__(
-        self, node_cache_service: Optional[Any] = None, payload_format: str = "json"
+        self,
+        node_cache_service: Optional[Any] = None,
+        payload_format: str = "json",
+        message_factory: Optional[Any] = None,
+        node_cache_updater: Optional[Any] = None,
     ):
         """
         Создает парсеры для JSON и Protobuf сообщений.
@@ -401,16 +405,20 @@ class MessageService:
         Args:
             node_cache_service: Сервис кэширования нод (опционально)
             payload_format: Формат payload ("json", "protobuf" или "both")
+            message_factory: Фабрика для создания доменных моделей (опционально)
+            node_cache_updater: Обновлятор кэша нод (опционально)
         """
         self.node_cache_service = node_cache_service
         self.payload_format = payload_format.lower() if payload_format else "json"
         
-        # Создаем фабрику и обновлятор для парсеров
-        from src.service.message_factory import MessageFactory
-        from src.service.node_cache_updater import NodeCacheUpdater
+        # Создаем фабрику и обновлятор, если не переданы
+        if message_factory is None:
+            from src.service.message_factory import MessageFactory
+            message_factory = MessageFactory(node_cache_service=node_cache_service)
         
-        message_factory = MessageFactory(node_cache_service=node_cache_service)
-        node_cache_updater = NodeCacheUpdater(node_cache_service=node_cache_service)
+        if node_cache_updater is None:
+            from src.service.node_cache_updater import NodeCacheUpdater
+            node_cache_updater = NodeCacheUpdater(node_cache_service=node_cache_service)
         
         self.json_parser = JsonMessageParser(
             node_cache_service=node_cache_service,
