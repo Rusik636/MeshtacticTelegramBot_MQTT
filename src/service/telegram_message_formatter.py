@@ -83,7 +83,7 @@ class TelegramMessageFormatter:
         if snr is None:
             return "⚪"  # Неизвестно
 
-        if snr > 10:
+        if snr >= 10:
             return "🟢"  # Отличный
         elif snr >= 5:
             return "🟡"  # Хороший

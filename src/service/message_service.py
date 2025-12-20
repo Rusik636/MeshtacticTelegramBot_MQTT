@@ -120,7 +120,7 @@ class BaseParser:
             node_cache_updater: Обновлятор кэша нод
         """
         self.node_cache_service = node_cache_service
-        
+
         # Инициализируем фабрику и обновлятор, если не переданы
         if message_factory is None:
             from src.service.message_factory import MessageFactory
@@ -471,24 +471,8 @@ class MessageService:
                 return self.protobuf_parser.parse(topic, payload)
             else:
                 return self.json_parser.parse(topic, payload)
-        except Exception as e:
-            # Если основной формат не подошел, пробуем альтернативный для обновления кэша
-            if should_parse_protobuf:
-                logger.debug(f"Ошибка парсинга protobuf, пробуем JSON для кэша: {e}")
-                try:
-                    return self.json_parser.parse(topic, payload)
-                except Exception:
-                    raise e
-            elif should_parse_json:
-                logger.debug(f"Ошибка парсинга JSON, пробуем protobuf для кэша: {e}")
-                try:
-                    return self.protobuf_parser.parse(topic, payload)
-                except Exception:
-                    raise e
-            raise ValueError(
-                f"Сообщение не соответствует выбранному формату payload_format={self.payload_format}, topic={topic}"
-            )
         except json.JSONDecodeError as e:
+            # Специфичная обработка JSONDecodeError - возвращаем сообщение с ошибкой
             logger.error(
                 f"Ошибка парсинга JSON из MQTT сообщения: topic={topic}, error={e}",
                 exc_info=True,
@@ -503,6 +487,7 @@ class MessageService:
                 raw_payload_bytes=payload,
             )
         except UnicodeDecodeError as e:
+            # Специфичная обработка UnicodeDecodeError
             logger.warning(
                 f"Невозможно декодировать payload как UTF-8 (возможно, protobuf): topic={topic}, error={e}"
             )
@@ -514,17 +499,49 @@ class MessageService:
                 raw_payload_bytes=payload,
             )
         except Exception as e:
-            logger.error(
-                f"Неожиданная ошибка при парсинге MQTT сообщения: topic={topic}, error={e}",
-                exc_info=True,
-            )
-            try:
-                raw_str = payload.decode("utf-8", errors="ignore")
-            except Exception:
-                raw_str = f"<binary data, {len(payload)} bytes>"
-            return MeshtasticMessage(
-                topic=topic,
-                raw_payload={"error": str(e), "raw": raw_str},
-                raw_payload_bytes=payload,
-            )
+            # Если основной формат не подошел, пробуем альтернативный для обновления кэша
+            if should_parse_protobuf:
+                logger.debug(f"Ошибка парсинга protobuf, пробуем JSON для кэша: {e}")
+                try:
+                    return self.json_parser.parse(topic, payload)
+                except Exception:
+                    # Если и альтернативный не подошел, возвращаем сообщение с ошибкой
+                    try:
+                        raw_str = payload.decode("utf-8", errors="ignore")
+                    except Exception:
+                        raw_str = f"<binary data, {len(payload)} bytes>"
+                    return MeshtasticMessage(
+                        topic=topic,
+                        raw_payload={"error": str(e), "raw": raw_str},
+                        raw_payload_bytes=payload,
+                    )
+            elif should_parse_json:
+                logger.debug(f"Ошибка парсинга JSON, пробуем protobuf для кэша: {e}")
+                try:
+                    return self.protobuf_parser.parse(topic, payload)
+                except Exception:
+                    # Если и альтернативный не подошел, возвращаем сообщение с ошибкой
+                    try:
+                        raw_str = payload.decode("utf-8", errors="ignore")
+                    except Exception:
+                        raw_str = f"<binary data, {len(payload)} bytes>"
+                    return MeshtasticMessage(
+                        topic=topic,
+                        raw_payload={"error": str(e), "raw": raw_str},
+                        raw_payload_bytes=payload,
+                    )
+            else:
+                # Если формат не определен, возвращаем сообщение с ошибкой
+                try:
+                    raw_str = payload.decode("utf-8", errors="ignore")
+                except Exception:
+                    raw_str = f"<binary data, {len(payload)} bytes>"
+                return MeshtasticMessage(
+                    topic=topic,
+                    raw_payload={
+                        "error": f"Сообщение не соответствует выбранному формату payload_format={self.payload_format}",
+                        "raw": raw_str,
+                    },
+                    raw_payload_bytes=payload,
+                )
 

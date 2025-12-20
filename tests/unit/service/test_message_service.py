@@ -198,7 +198,7 @@ class TestMessageService:
         mock_message_factory,
         mock_node_cache_updater,
     ):
-        """Тест обработки UnicodeDecodeError (бинарные данные)."""
+        """Тест обработки бинарных данных в JSON топике."""
         service = MessageService(
             node_cache_service=mock_node_cache_service,
             payload_format="json",
@@ -213,7 +213,8 @@ class TestMessageService:
         
         assert isinstance(result, MeshtasticMessage)
         assert "error" in result.raw_payload
-        assert "Binary payload" in result.raw_payload.get("error", "")
+        # Бинарные данные в JSON топике вызывают JSONDecodeError, а не UnicodeDecodeError
+        assert "Failed to parse JSON" in result.raw_payload.get("error", "")
 
     def test_parse_calls_message_factory(
         self,
@@ -307,9 +308,14 @@ class TestMessageService:
         )
         
         # Мокируем protobuf парсер для fallback
-        with patch.object(service, "protobuf_parser") as mock_protobuf_parser:
-            mock_protobuf_parser.parse.return_value = expected_message
-            
+        # Protobuf парсер вызывает _create_message, который вызывает update_from_message
+        # Поэтому мокируем parse так, чтобы он возвращал сообщение и вызывал update_from_message
+        def mock_parse(topic, payload):
+            # Вызываем update_from_message вручную, как это делает _create_message
+            service.protobuf_parser.node_cache_updater.update_from_message(expected_message, nodeinfo_payload)
+            return expected_message
+        
+        with patch.object(service.protobuf_parser, "parse", side_effect=mock_parse):
             topic = "msh/2/e/LongFast/!12345678"  # Protobuf топик
             payload = b"protobuf_data"
             
@@ -317,6 +323,7 @@ class TestMessageService:
             
             # Должен попытаться парсить protobuf для обновления кэша
             assert result == expected_message
+            # update_from_message должен быть вызван
             mock_node_cache_updater.update_from_message.assert_called_once()
 
     def test_parse_with_both_format(

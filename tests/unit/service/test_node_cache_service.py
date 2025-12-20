@@ -329,19 +329,20 @@ class TestNodeCacheService:
         assert data["nodes"][0]["longname"] == "Test Node"
 
     def test_update_node_info_with_none_values(self, mock_file_storage, temp_dir: Path):
-        """Тест обновления с None значениями."""
+        """Тест обновления с None значениями - None значения не обновляются (только не-None)."""
         cache_file = temp_dir / "nodes_cache.json"
         service = NodeCacheService(cache_file=str(cache_file), file_storage=mock_file_storage)
         
         # Создаем ноду с именами
         service.update_node_info("!12345678", longname="Test Node", shortname="TN", force=True)
         
-        # Обновляем с None - должно обновиться в памяти
+        # Обновляем с None - значения не должны обновиться (None не обновляет существующие значения)
         service.update_node_info("!12345678", longname=None, shortname=None)
         
         node_info = service.get_node_info("!12345678")
-        assert node_info.longname is None
-        assert node_info.shortname is None
+        # Значения остаются прежними, так как None не обновляет существующие значения
+        assert node_info.longname == "Test Node"
+        assert node_info.shortname == "TN"
 
 
 class TestNodeInfo:

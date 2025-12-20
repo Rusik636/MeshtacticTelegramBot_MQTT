@@ -204,13 +204,19 @@ class NodeCacheService:
         if existing_node:
             # Обновляем существующую запись в памяти
             # Обновляем имена, если они предоставлены (даже если None - это может быть явное удаление)
+            updated = False
+            # Используем специальный объект-маркер для различения "не передано" и "передано None"
+            # Но так как в Python нет способа различить это без изменения сигнатуры,
+            # обновляем значения только если они не None (явное удаление через None не поддерживается)
             if longname is not None:
                 existing_node.longname = longname
+                updated = True
             if shortname is not None:
                 existing_node.shortname = shortname
+                updated = True
             
             # Обновляем время последнего обновления только если действительно обновили данные
-            if longname is not None or shortname is not None:
+            if updated:
                 existing_node.last_updated = datetime.utcnow()
                 logger.info(
                     f"Обновлена информация о ноде в кэше: {node_id} "

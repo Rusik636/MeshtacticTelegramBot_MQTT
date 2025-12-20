@@ -7,7 +7,8 @@
 import logging
 from typing import Optional
 
-from aiomqtt import MQTTClient, MqttError  # type: ignore
+from aiomqtt import Client as MQTTClient  # type: ignore
+from aiomqtt.exceptions import MqttError  # type: ignore
 
 from src.config import MQTTBrokerConfig
 
