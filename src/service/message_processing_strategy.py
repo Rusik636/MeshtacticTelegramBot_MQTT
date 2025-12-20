@@ -159,6 +159,7 @@ class GroupModeStrategy(MessageProcessingStrategy):
         node_cache_service: Optional["NodeCacheService"] = None,
         grouping_service: Optional["MessageGroupingService"] = None,
         telegram_config: Optional[Any] = None,
+        message_formatter: Optional[TelegramMessageFormatter] = None,
     ):
         """
         Создает стратегию группового режима.
@@ -168,8 +169,14 @@ class GroupModeStrategy(MessageProcessingStrategy):
             node_cache_service: Сервис кэша нод
             grouping_service: Сервис группировки сообщений
             telegram_config: Конфигурация Telegram
+            message_formatter: Форматтер сообщений для Telegram
         """
-        super().__init__(node_cache_service, grouping_service, telegram_config)
+        super().__init__(
+            node_cache_service=node_cache_service,
+            grouping_service=grouping_service,
+            telegram_config=telegram_config,
+            message_formatter=message_formatter,
+        )
         self.send_to_users = send_to_users
 
     async def should_process(self, message: MeshtasticMessage) -> bool:
