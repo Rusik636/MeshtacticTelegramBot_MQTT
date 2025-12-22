@@ -271,6 +271,9 @@ class GroupModeStrategy(MessageProcessingStrategy):
                             "hops_away": node.hops_away,
                             "sender_node": node.sender_node,
                             "sender_node_name": node.sender_node_name,
+                            "sender_node_short": node.sender_node_short,
+                            "sender_rssi": node.sender_rssi,
+                            "sender_snr": node.sender_snr,
                         }
                         for node in group.get_unique_nodes()
                     ]
@@ -311,6 +314,9 @@ class GroupModeStrategy(MessageProcessingStrategy):
                             "hops_away": node.hops_away,
                             "sender_node": node.sender_node,
                             "sender_node_name": node.sender_node_name,
+                            "sender_node_short": node.sender_node_short,
+                            "sender_rssi": node.sender_rssi,
+                            "sender_snr": node.sender_snr,
                         }
                         for node in group.get_unique_nodes()
                     ]

@@ -509,25 +509,29 @@ class TestTelegramMessageFormatter:
             assert f"Node {i}" in result
 
     def test_format_with_grouping_rssi_display(self, mock_node_cache_service):
-        """Тест отображения RSSI в группировке."""
+        """Тест отображения RSSI в группировке (от sender_node)."""
         formatter = TelegramMessageFormatter(node_cache_service=mock_node_cache_service)
         
         message = MeshtasticMessage(
             topic="msh/2/json/!12345678",
             raw_payload={"type": "text"},
             text="Hello",
+            from_node="!12345678",
         )
         
         received_by_nodes = [
             {
                 "node_id": "!11111111",
                 "node_name": "Node 1",
-                "rssi": -80,
+                "sender_node": "!12345678",  # Получено от отправителя
+                "sender_rssi": -80,  # RSSI от sender_node
+                "sender_snr": 10.5,  # SNR от sender_node
             },
         ]
         
         result = formatter.format_with_grouping(message, received_by_nodes=received_by_nodes)
         
+        # RSSI должен отображаться для sender_node
         assert "-80" in result
         assert "dBm" in result
 

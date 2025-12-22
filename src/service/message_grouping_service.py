@@ -29,6 +29,9 @@ class ReceivedByNode:
     hops_away: Optional[int] = None
     sender_node: Optional[str] = None
     sender_node_name: Optional[str] = None
+    sender_node_short: Optional[str] = None
+    sender_rssi: Optional[int] = None  # RSSI от sender_node
+    sender_snr: Optional[float] = None  # SNR от sender_node
 
     def __hash__(self) -> int:
         """Хэш для использования в множествах."""
@@ -180,6 +183,13 @@ class MessageGroupingService:
             node_name = node_cache_service.get_node_name(node_id)
             node_short = node_cache_service.get_node_shortname(node_id)
 
+        # Получаем информацию о sender_node из кэша
+        sender_node_name = None
+        sender_node_short = None
+        if node_cache_service and message.sender_node:
+            sender_node_name = node_cache_service.get_node_name(message.sender_node)
+            sender_node_short = node_cache_service.get_node_shortname(message.sender_node)
+        
         received_node = ReceivedByNode(
             node_id=node_id,
             node_name=node_name,
@@ -189,7 +199,10 @@ class MessageGroupingService:
             snr=message.snr,
             hops_away=message.hops_away,
             sender_node=message.sender_node,
-            sender_node_name=message.sender_node_name,
+            sender_node_name=sender_node_name or message.sender_node_name,
+            sender_node_short=sender_node_short or message.sender_node_short,
+            sender_rssi=message.rssi,  # RSSI от sender_node (это RSSI приема сообщения)
+            sender_snr=message.snr,   # SNR от sender_node (это SNR приема сообщения)
         )
 
         return group.add_node(received_node)
