@@ -44,7 +44,7 @@ PROTOBUF_AVAILABLE = False
 mqtt_pb2 = None
 
 DEFAULT_CONFIG = {
-    "host": "212.193.26.136",
+    "host": "212.193.26.136ё",
     "port": 1883,
     "topic": "msh/#",
     "username": None,

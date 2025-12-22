@@ -405,22 +405,142 @@ class AllModeStrategy(MessageProcessingStrategy):
             tg_id: Telegram ID пользователя (опционально)
             notify_user_ids: Список user_id для уведомлений
         """
-        # Для текстовых - обычное форматирование
+        # Для текстовых сообщений - используем группировку (как в GroupModeStrategy)
         if message.message_type == "text":
-            telegram_text = self.message_formatter.format(
-                message, node_cache_service=self.node_cache_service
-            )
-            
-            # Текстовые сообщения отправляем в группу
-            try:
-                await telegram_repo.send_to_group(telegram_text)
-                logger.info(
-                    f"Отправлено текстовое сообщение в группу (режим ALL)"
+            # Извлекаем ноду-получателя из топика
+            receiver_node_id = None
+            topic_parts = topic.split("/")
+            if len(topic_parts) >= 4:
+                potential_node_id = topic_parts[-1]
+                if potential_node_id.startswith("!"):
+                    receiver_node_id = potential_node_id
+
+            # Обработка группировки сообщений (если включена)
+            if (
+                self.grouping_service
+                and self.telegram_config
+                and self.telegram_config.message_grouping_enabled
+                and message.message_id
+            ):
+                # Преобразуем message_id в строку для группировки
+                message_id_str = str(message.message_id)
+                
+                # Добавляем ноду-получателя в группу
+                node_added = self.grouping_service.add_received_node(
+                    message_id=message_id_str,
+                    message=message,
+                    receiver_node_id=receiver_node_id,
+                    node_cache_service=self.node_cache_service,
                 )
-            except Exception as e:
-                logger.error(
-                    f"Ошибка при отправке в группу: {e}", exc_info=True
+
+                group = self.grouping_service.get_group(message_id_str)
+                if group:
+                    # Проверяем, есть ли уже telegram_message_id
+                    if group.telegram_message_id is None:
+                        # Первое сообщение - отправляем новое
+                        received_by_nodes = [
+                            {
+                                "node_id": node.node_id,
+                                "node_name": node.node_name,
+                                "node_short": node.node_short,
+                                "received_at": node.received_at,
+                                "rssi": node.rssi,
+                                "snr": node.snr,
+                                "hops_away": node.hops_away,
+                                "sender_node": node.sender_node,
+                                "sender_node_name": node.sender_node_name,
+                                "sender_node_short": node.sender_node_short,
+                                "sender_rssi": node.sender_rssi,
+                                "sender_snr": node.sender_snr,
+                            }
+                            for node in group.get_unique_nodes()
+                        ]
+
+                        telegram_text = self.message_formatter.format_with_grouping(
+                            message,
+                            received_by_nodes=received_by_nodes,
+                            show_receive_time=self.telegram_config.show_receive_time,
+                            node_cache_service=self.node_cache_service,
+                        )
+
+                        try:
+                            telegram_message_id = await telegram_repo.send_to_group(
+                                telegram_text
+                            )
+                            if telegram_message_id:
+                                group.telegram_message_id = telegram_message_id
+                                logger.info(
+                                    f"Отправлено новое группированное сообщение: message_id={message.message_id}, telegram_message_id={telegram_message_id}"
+                                )
+                        except Exception as e:
+                            logger.error(
+                                f"Ошибка при отправке группированного сообщения: {e}",
+                                exc_info=True,
+                            )
+                    elif node_added and self.grouping_service.is_grouping_active(
+                        message_id_str
+                    ):
+                        # Обновляем существующее сообщение
+                        received_by_nodes = [
+                            {
+                                "node_id": node.node_id,
+                                "node_name": node.node_name,
+                                "node_short": node.node_short,
+                                "received_at": node.received_at,
+                                "rssi": node.rssi,
+                                "snr": node.snr,
+                                "hops_away": node.hops_away,
+                                "sender_node": node.sender_node,
+                                "sender_node_name": node.sender_node_name,
+                                "sender_node_short": node.sender_node_short,
+                                "sender_rssi": node.sender_rssi,
+                                "sender_snr": node.sender_snr,
+                            }
+                            for node in group.get_unique_nodes()
+                        ]
+
+                        telegram_text = self.message_formatter.format_with_grouping(
+                            message,
+                            received_by_nodes=received_by_nodes,
+                            show_receive_time=self.telegram_config.show_receive_time,
+                            node_cache_service=self.node_cache_service,
+                        )
+
+                        try:
+                            await telegram_repo.edit_group_message(
+                                group.telegram_message_id, telegram_text
+                            )
+                            logger.info(
+                                f"Обновлено группированное сообщение: message_id={message.message_id}, telegram_message_id={group.telegram_message_id}, нод: {len(received_by_nodes)}"
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Ошибка при редактировании группированного сообщения: {e}",
+                                exc_info=True,
+                            )
+                    else:
+                        logger.debug(
+                            f"Группировка неактивна или нода не добавлена: message_id={message_id_str}"
+                        )
+
+                # Очищаем истекшие группы
+                self.grouping_service.cleanup_expired_groups()
+            else:
+                # Если группировка не включена или нет message_id - используем обычное форматирование
+                telegram_text = self.message_formatter.format(
+                    message, node_cache_service=self.node_cache_service
                 )
+                
+                # Текстовые сообщения отправляем в группу
+                try:
+                    await telegram_repo.send_to_group(telegram_text)
+                    logger.info(
+                        f"Отправлено текстовое сообщение в группу (режим ALL)"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Ошибка при отправке в группу: {e}", exc_info=True
+                    )
         else:
             # Для служебных сообщений - специальное форматирование
             telegram_text = self._format_non_text_message(message)
