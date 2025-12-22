@@ -180,8 +180,36 @@ class GroupModeStrategy(MessageProcessingStrategy):
         self.send_to_users = send_to_users
 
     async def should_process(self, message: MeshtasticMessage) -> bool:
-        """Обрабатываем только текстовые сообщения."""
-        return message.message_type == "text"
+        """
+        Определяет, нужно ли обрабатывать сообщение.
+        
+        Обрабатываем:
+        - Текстовые сообщения (message_type == "text")
+        - Сообщения с message_id, для которых уже существует группа (для группировки ретранслированных сообщений)
+        """
+        # Обычные текстовые сообщения
+        if message.message_type == "text":
+            return True
+        
+        # Если включена группировка и у сообщения есть message_id,
+        # проверяем, существует ли уже группа для этого message_id
+        # Это позволяет обрабатывать ретранслированные сообщения с тем же message_id,
+        # даже если их message_type=None
+        if (
+            self.grouping_service
+            and self.telegram_config
+            and self.telegram_config.message_grouping_enabled
+            and message.message_id
+        ):
+            message_id_str = str(message.message_id) if message.message_id else None
+            if not message_id_str:
+                return False
+            existing_group = self.grouping_service.get_group(message_id_str)
+            if existing_group and existing_group.telegram_message_id is not None:
+                # Группа существует и уже отправлена в Telegram - обрабатываем для обновления
+                return True
+        
+        return False
 
     async def process_message(
         self,
@@ -216,15 +244,18 @@ class GroupModeStrategy(MessageProcessingStrategy):
             and self.telegram_config.message_grouping_enabled
             and message.message_id
         ):
+            # Преобразуем message_id в строку для группировки
+            message_id_str = str(message.message_id)
+            
             # Добавляем ноду-получателя в группу
             node_added = self.grouping_service.add_received_node(
-                message_id=message.message_id,
+                message_id=message_id_str,
                 message=message,
                 receiver_node_id=receiver_node_id,
                 node_cache_service=self.node_cache_service,
             )
 
-            group = self.grouping_service.get_group(message.message_id)
+            group = self.grouping_service.get_group(message_id_str)
             if group:
                 # Проверяем, есть ли уже telegram_message_id
                 if group.telegram_message_id is None:
@@ -266,7 +297,7 @@ class GroupModeStrategy(MessageProcessingStrategy):
                             exc_info=True,
                         )
                 elif node_added and self.grouping_service.is_grouping_active(
-                    message.message_id
+                    message_id_str
                 ):
                     # Обновляем существующее сообщение
                     received_by_nodes = [

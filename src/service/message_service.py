@@ -230,18 +230,23 @@ class ProtobufMessageParser(BaseParser):
         portnum = decoded.get("portnum")
         if portnum:
             portnum_lower = str(portnum).lower()
-            if "text_message" in portnum_lower and "compressed" not in portnum_lower:
-                raw_payload["type"] = "text"
-            elif "text_message_compressed" in portnum_lower:
+            # Проверяем более специфичные типы первыми
+            if "text_message_compressed" in portnum_lower:
                 raw_payload["type"] = "text_compressed"
+            elif "text_message" in portnum_lower:
+                raw_payload["type"] = "text"
             elif "nodeinfo" in portnum_lower:
                 raw_payload["type"] = "nodeinfo"
             elif "position" in portnum_lower:
                 raw_payload["type"] = "position"
             elif "telemetry" in portnum_lower:
                 raw_payload["type"] = "telemetry"
+            elif "traceroute" in portnum_lower or "route_discovery" in portnum_lower:
+                raw_payload["type"] = "routing"
             elif "routing" in portnum_lower:
                 raw_payload["type"] = "routing"
+            elif "neighborinfo" in portnum_lower:
+                raw_payload["type"] = "neighborinfo"
             elif "admin" in portnum_lower:
                 raw_payload["type"] = "admin"
             elif "paxcounter" in portnum_lower:
@@ -252,6 +257,20 @@ class ProtobufMessageParser(BaseParser):
                 raw_payload["type"] = "audio"
             elif "ip_tunnel" in portnum_lower:
                 raw_payload["type"] = "ip_tunnel"
+            else:
+                logger.debug(
+                    f"Неизвестный portnum: {portnum} (topic={topic})"
+                )
+        else:
+            # Если portnum не определен, логируем для отладки
+            if decoded:
+                logger.debug(
+                    f"portnum не найден в decoded: topic={topic}, decoded keys={list(decoded.keys())}"
+                )
+            else:
+                logger.debug(
+                    f"decoded пустой или отсутствует: topic={topic}"
+                )
 
         payload_b64 = decoded.get("payload")
         if payload_b64:
@@ -327,11 +346,45 @@ class ProtobufMessageParser(BaseParser):
                     try:
                         from meshtastic.protobuf import mesh_pb2  # type: ignore
 
-                        rt = mesh_pb2.Routing()
-                        rt.ParseFromString(decoded_bytes)
-                        raw_payload["payload"] = MessageToDict(
-                            rt, preserving_proto_field_name=True
-                        )
+                        # Пробуем RouteDiscovery (для ROUTING_APP / TRACEROUTE_APP)
+                        try:
+                            rt = mesh_pb2.RouteDiscovery()
+                            rt.ParseFromString(decoded_bytes)
+                            raw_payload["payload"] = MessageToDict(
+                                rt, preserving_proto_field_name=True
+                            )
+                        except Exception:
+                            # Если RouteDiscovery не подошел, пробуем Routing
+                            rt = mesh_pb2.Routing()
+                            rt.ParseFromString(decoded_bytes)
+                            raw_payload["payload"] = MessageToDict(
+                                rt, preserving_proto_field_name=True
+                            )
+                    except Exception as e:
+                        raw_payload["payload"] = {
+                            "raw_base64": payload_b64,
+                            "decode_error": str(e),
+                        }
+
+                elif raw_payload["type"] == "neighborinfo":
+                    try:
+                        from meshtastic.protobuf import mesh_pb2  # type: ignore
+
+                        # NEIGHBORINFO_APP использует структуру NeighborInfo
+                        # Пробуем разные варианты структуры
+                        try:
+                            neighbor = mesh_pb2.NeighborInfo()
+                            neighbor.ParseFromString(decoded_bytes)
+                            raw_payload["payload"] = MessageToDict(
+                                neighbor, preserving_proto_field_name=True
+                            )
+                        except Exception:
+                            # Если NeighborInfo не найден, сохраняем как raw
+                            raw_payload["payload"] = {
+                                "raw_base64": payload_b64,
+                                "raw_hex": decoded_bytes.hex(),
+                                "note": "NeighborInfo structure not available",
+                            }
                     except Exception as e:
                         raw_payload["payload"] = {
                             "raw_base64": payload_b64,
