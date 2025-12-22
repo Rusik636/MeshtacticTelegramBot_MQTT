@@ -229,6 +229,10 @@ class GroupModeStrategy(MessageProcessingStrategy):
             tg_id: Telegram ID пользователя (опционально)
             notify_user_ids: Список user_id для уведомлений
         """
+        # Проверяем, является ли сообщение broadcast (to = "Всем")
+        # Личные сообщения не публикуем в группу, только в личный чат
+        is_broadcast = message.to_node == "Всем" or message.to_node is None
+        
         # Извлекаем ноду-получателя из топика
         receiver_node_id = None
         topic_parts = topic.split("/")
@@ -237,9 +241,10 @@ class GroupModeStrategy(MessageProcessingStrategy):
             if potential_node_id.startswith("!"):
                 receiver_node_id = potential_node_id
 
-        # Обработка группировки сообщений
+        # Обработка группировки сообщений (только для broadcast сообщений)
         if (
-            self.grouping_service
+            is_broadcast
+            and self.grouping_service
             and self.telegram_config
             and self.telegram_config.message_grouping_enabled
             and message.message_id
@@ -343,8 +348,8 @@ class GroupModeStrategy(MessageProcessingStrategy):
 
             # Очищаем истекшие группы
             self.grouping_service.cleanup_expired_groups()
-        else:
-            # Обычная отправка без группировки
+        elif is_broadcast:
+            # Обычная отправка без группировки (только для broadcast)
             telegram_text = self.message_formatter.format(
                 message, node_cache_service=self.node_cache_service
             )
@@ -357,9 +362,32 @@ class GroupModeStrategy(MessageProcessingStrategy):
                 logger.error(
                     f"Ошибка при отправке в групповой чат: {e}", exc_info=True
                 )
+        else:
+            # Личное сообщение - не отправляем в группу
+            logger.debug(
+                f"Личное сообщение (to={message.to_node}) не отправляется в группу (режим GROUP)"
+            )
 
-        # Опционально отправляем пользователям (без группировки для личных сообщений)
-        if self.send_to_users and notify_user_ids:
+        # Отправляем личные сообщения в личный чат (если указан tg_id)
+        # Также отправляем broadcast сообщения пользователям, если включено send_to_users
+        if tg_id:
+            # Личное сообщение или broadcast - отправляем в личный чат
+            telegram_text = self.message_formatter.format(
+                message, node_cache_service=self.node_cache_service
+            )
+            if telegram_repo.is_user_allowed(tg_id):
+                try:
+                    await telegram_repo.send_to_user(tg_id, telegram_text)
+                    logger.debug(
+                        f"Отправлено сообщение пользователю {tg_id} (режим GROUP, to={message.to_node})"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Ошибка при отправке пользователю {tg_id}: {e}",
+                        exc_info=True,
+                    )
+        elif self.send_to_users and notify_user_ids:
+            # Broadcast сообщения - отправляем всем указанным пользователям
             telegram_text = self.message_formatter.format(
                 message, node_cache_service=self.node_cache_service
             )
