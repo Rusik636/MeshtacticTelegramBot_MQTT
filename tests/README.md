@@ -7,7 +7,7 @@
 ```
 tests/
 ├── conftest.py                    # Общие фикстуры
-├── unit/
+├── unit/                          # Unit-тесты (изолированные тесты компонентов)
 │   ├── domain/                    # Тесты доменного слоя
 │   │   └── test_message.py
 │   ├── service/                   # Тесты сервисного слоя
@@ -18,6 +18,8 @@ tests/
 │   │   └── test_node_cache_service.py
 │   └── infrastructure/            # Тесты инфраструктурного слоя
 │       └── test_di_container.py
+├── integration/                   # Интеграционные тесты (проверка взаимодействия компонентов)
+│   └── test_message_grouping.py  # Тест группировки сообщений от MQTT до Telegram
 └── README.md
 ```
 
@@ -47,6 +49,16 @@ pytest tests/unit/domain/test_message.py::TestMeshtasticMessage::test_create_min
 ### С покрытием кода
 ```bash
 pytest --cov=src --cov-report=html tests/
+```
+
+### Только интеграционные тесты
+```bash
+pytest tests/integration/
+```
+
+### Только unit-тесты
+```bash
+pytest tests/unit/
 ```
 
 ### Только быстрые тесты (без asyncio)

@@ -53,6 +53,13 @@ class TelegramMessageFormatter:
         if rssi is None:
             return "⚪"  # Неизвестно
 
+        # Валидация: RSSI должен быть отрицательным числом (или 0 считается некорректным)
+        # Типичный диапазон для LoRa: от -150 до 0 dBm
+        if rssi >= 0:
+            return "⚪"  # Некорректное значение (положительное или 0)
+        if rssi < -150:
+            return "⚪"  # Некорректное значение (слишком большое отрицательное)
+
         if rssi > -80:
             return "🟢"  # Отличный
         elif rssi >= -100:
@@ -68,7 +75,7 @@ class TelegramMessageFormatter:
         Определяет эмодзи качества сигнала на основе SNR.
 
         Пороги для LoRa/Meshtastic:
-        - 🟢 Отличный: > 10 dB
+        - 🟢 Отличный: >= 10 dB
         - 🟡 Хороший: 5 до 10 dB
         - 🟠 Удовлетворительный: 0 до 5 dB
         - 🔴 Плохой: -5 до 0 dB
@@ -82,6 +89,11 @@ class TelegramMessageFormatter:
         """
         if snr is None:
             return "⚪"  # Неизвестно
+
+        # Валидация: SNR для LoRa обычно в диапазоне от -20 до 30 dB
+        # Значения вне этого диапазона считаются некорректными
+        if snr < -20 or snr > 30:
+            return "⚪"  # Некорректное значение (вне физических пределов)
 
         if snr >= 10:
             return "🟢"  # Отличный
@@ -216,14 +228,19 @@ class TelegramMessageFormatter:
                 parts.append(f"🔄 Ретранслировано {message.hops_away} раз")
 
         # Качество сигнала (RSSI и SNR с отдельными индикаторами)
+        # Показываем только валидные значения (игнорируем None, 0, некорректные)
         signal_parts = []
-        if message.rssi is not None:
+        if message.rssi is not None and message.rssi < 0:
             rssi_emoji = self.get_rssi_quality_emoji(message.rssi)
-            signal_parts.append(f"{rssi_emoji} RSSI: {message.rssi} dBm")
+            # Показываем только если эмодзи не "Неизвестно" (некорректные значения)
+            if rssi_emoji != "⚪":
+                signal_parts.append(f"{rssi_emoji} RSSI: {message.rssi} dBm")
 
         if message.snr is not None:
             snr_emoji = self.get_snr_quality_emoji(message.snr)
-            signal_parts.append(f"{snr_emoji} SNR: {message.snr:.1f} dB")
+            # Показываем только если эмодзи не "Неизвестно" (некорректные значения)
+            if snr_emoji != "⚪":
+                signal_parts.append(f"{snr_emoji} SNR: {message.snr:.1f} dB")
 
         if signal_parts:
             parts.append(f"📶 {' | '.join(signal_parts)}")
@@ -389,14 +406,19 @@ class TelegramMessageFormatter:
                 parts.append(f"🔄 Ретранслировано {message.hops_away} раз")
 
         # Качество сигнала (RSSI и SNR с отдельными индикаторами)
+        # Показываем только валидные значения (игнорируем None, 0, некорректные)
         signal_parts = []
-        if message.rssi is not None:
+        if message.rssi is not None and message.rssi < 0:
             rssi_emoji = self.get_rssi_quality_emoji(message.rssi)
-            signal_parts.append(f"{rssi_emoji} RSSI: {message.rssi} dBm")
+            # Показываем только если эмодзи не "Неизвестно" (некорректные значения)
+            if rssi_emoji != "⚪":
+                signal_parts.append(f"{rssi_emoji} RSSI: {message.rssi} dBm")
 
         if message.snr is not None:
             snr_emoji = self.get_snr_quality_emoji(message.snr)
-            signal_parts.append(f"{snr_emoji} SNR: {message.snr:.1f} dB")
+            # Показываем только если эмодзи не "Неизвестно" (некорректные значения)
+            if snr_emoji != "⚪":
+                signal_parts.append(f"{snr_emoji} SNR: {message.snr:.1f} dB")
 
         if signal_parts:
             parts.append(f"📶 {' | '.join(signal_parts)}")
@@ -442,11 +464,20 @@ class TelegramMessageFormatter:
                             time_str = str(received_at)
                         node_parts.append(f" ({time_str})")
 
-                # Качество сигнала
+                # Качество сигнала (показываем только валидные значения)
                 rssi = node_info.get("rssi")
-                if rssi is not None:
+                if rssi is not None and rssi < 0:  # Игнорируем None, 0 и положительные значения
                     rssi_emoji = self.get_rssi_quality_emoji(rssi)
-                    node_parts.append(f" {rssi_emoji} {rssi} dBm")
+                    # Показываем только если эмодзи не "Неизвестно" (некорректные значения)
+                    if rssi_emoji != "⚪":
+                        node_parts.append(f" {rssi_emoji} {rssi} dBm")
+                
+                # SNR для нод-получателей (если нужно в будущем)
+                # snr = node_info.get("snr")
+                # if snr is not None:
+                #     snr_emoji = self.get_snr_quality_emoji(snr)
+                #     if snr_emoji != "⚪":
+                #         node_parts.append(f" {snr_emoji} {snr:.1f} dB")
 
                 parts.append("".join(node_parts))
 

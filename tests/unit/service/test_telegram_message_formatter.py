@@ -210,6 +210,9 @@ class TestTelegramMessageFormatter:
             (-120, "🔴"),  # Плохой
             (-130, "⚫"),  # Очень плохой
             (None, "⚪"),  # Неизвестно
+            (0, "⚪"),  # Некорректное значение (0)
+            (50, "⚪"),  # Некорректное значение (положительное)
+            (-200, "⚪"),  # Некорректное значение (< -150)
         ],
     )
     def test_get_rssi_quality_emoji(self, rssi, expected_emoji):
@@ -230,6 +233,8 @@ class TestTelegramMessageFormatter:
             (-5.0, "🔴"),  # Плохой
             (-10.0, "⚫"),  # Очень плохой
             (None, "⚪"),  # Неизвестно
+            (-25.0, "⚪"),  # Некорректное значение (< -20)
+            (35.0, "⚪"),  # Некорректное значение (> 30)
         ],
     )
     def test_get_snr_quality_emoji(self, snr, expected_emoji):
@@ -314,6 +319,59 @@ class TestTelegramMessageFormatter:
         
         # Не должно быть блока качества сигнала
         assert "📶" not in result
+
+    def test_format_invalid_rssi_values(self, mock_node_cache_service):
+        """Тест форматирования с некорректными значениями RSSI (0, положительные, < -150)."""
+        formatter = TelegramMessageFormatter(node_cache_service=mock_node_cache_service)
+        
+        # Тест с RSSI=0
+        message1 = MeshtasticMessage(
+            topic="msh/2/json/!12345678",
+            raw_payload={"type": "text"},
+            rssi=0,
+        )
+        result1 = formatter.format(message1)
+        assert "📶" not in result1  # Не должно отображаться
+        
+        # Тест с положительным RSSI
+        message2 = MeshtasticMessage(
+            topic="msh/2/json/!12345678",
+            raw_payload={"type": "text"},
+            rssi=50,
+        )
+        result2 = formatter.format(message2)
+        assert "📶" not in result2  # Не должно отображаться
+        
+        # Тест с RSSI < -150
+        message3 = MeshtasticMessage(
+            topic="msh/2/json/!12345678",
+            raw_payload={"type": "text"},
+            rssi=-200,
+        )
+        result3 = formatter.format(message3)
+        assert "📶" not in result3  # Не должно отображаться
+
+    def test_format_invalid_snr_values(self, mock_node_cache_service):
+        """Тест форматирования с некорректными значениями SNR (< -20 или > 30)."""
+        formatter = TelegramMessageFormatter(node_cache_service=mock_node_cache_service)
+        
+        # Тест с SNR < -20
+        message1 = MeshtasticMessage(
+            topic="msh/2/json/!12345678",
+            raw_payload={"type": "text"},
+            snr=-25.0,
+        )
+        result1 = formatter.format(message1)
+        assert "📶" not in result1  # Не должно отображаться
+        
+        # Тест с SNR > 30
+        message2 = MeshtasticMessage(
+            topic="msh/2/json/!12345678",
+            raw_payload={"type": "text"},
+            snr=35.0,
+        )
+        result2 = formatter.format(message2)
+        assert "📶" not in result2  # Не должно отображаться
 
     def test_format_very_long_node_names(self, mock_node_cache_service):
         """Тест форматирования с очень длинными именами нод."""
